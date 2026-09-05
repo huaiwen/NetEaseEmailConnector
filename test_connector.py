@@ -73,8 +73,7 @@ class FakeIMAP:
         if args[0] == "SEARCH":
             return "OK", [b"40 41 42"]
         if args[0] == "FETCH":
-            meta = f"1 (UID {args[1]} FLAGS (\\Flagged) RFC822.SIZE {len(RAW)}".encode()
-            return "OK", [(meta, RAW), b")"]
+            return "OK", [(f"1 (UID {uid} FLAGS (\\Flagged) RFC822.SIZE {len(RAW)}".encode(), RAW) for uid in args[1].split(",")]
         return "OK", [b"done"]
 
     def append(self, *args):
@@ -145,12 +144,23 @@ class ConnectorCheck(unittest.TestCase):
             client = FakeIMAP.instances[-1]
             self.assertEqual(client.literal, '你好" OR ALL'.encode())
             search_call = next(c for c in client.calls if c[0] == "SEARCH")
-            self.assertEqual(search_call, ("SEARCH", "UTF-8", "UNDELETED", "UNSEEN", "SINCE", "02-Jan-2026", "SUBJECT"))
+            self.assertEqual(search_call, ("SEARCH", "CHARSET", "UTF-8", "UNDELETED", "UNSEEN", "SINCE", "02-Jan-2026", "SUBJECT"))
             self.assertTrue(all("BODY.PEEK" in c[2] for c in client.calls if c[0] == "FETCH"))
             self.assertIn(("SELECT", '"INBOX"', True), client.calls)
             box.search_emails(Search(before_uid=41))
             self.assertIn(("SEARCH", None, "UNDELETED", "UID", "1:40"), FakeIMAP.instances[-1].calls)
             self.assertEqual(box.search_emails(Search(before_uid=1))["messages"], [])
+            original_uid = FakeIMAP.uid
+            def empty_server_search(self, *args):
+                if args[0] == "SEARCH" and "CHARSET" in args:
+                    return "OK", [b""]
+                return original_uid(self, *args)
+            with patch.object(FakeIMAP, "uid", empty_server_search):
+                fallback = box.search_emails(Search(query="中文", limit=2))
+                self.assertEqual(fallback["search_mode"], "local_fallback")
+                self.assertEqual([m["ref"]["uid"] for m in fallback["messages"]], [42, 41])
+                self.assertEqual(fallback["next_before_uid"], 41)
+                self.assertTrue(box.search_emails(Search(query="你好", field="TEXT"))["messages"])
 
             read = box.read_email(MessageRef(**REF))
             self.assertEqual(read["subject"], "中文测试")

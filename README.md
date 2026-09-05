@@ -72,7 +72,9 @@ uv run python server.py http
 {"folder":"INBOX","query":"发票","field":"SUBJECT","unread_only":true,"since":"2026-09-01","limit":10}
 ```
 
-`field` 可选 `SUBJECT`、`FROM`、`TO`、`TEXT`。中文搜索使用 UTF-8 literal；若服务器拒绝该字符集，会明确报错，不把失败当成没有结果。结果按 UID 从大到小排列。下一页传回 `next_before_uid` 作为 `before_uid`，其余过滤条件保持一致。
+`field` 可选 `SUBJECT`、`FROM`、`TO`、`TEXT`。搜索使用 `CHARSET UTF-8` 和 literal；若服务器拒绝字符集，会明确报错。部分网易企业邮箱的文本搜索会成功返回空结果，此时自动解码并扫描最近一页邮件：主题/地址最多 100 封，全文最多 20 封。返回 `search_mode` 和 `scanned`，不会声称已扫描整个邮箱。
+
+结果按 UID 从大到小排列。下一页传回 `next_before_uid` 作为 `before_uid`，其余过滤条件保持一致。**只要有下一页游标，即使当前 `messages` 为空也应继续翻页**，才能遍历扫描范围以外的旧邮件。服务端返回非空搜索结果时沿用服务端匹配结果。
 
 每封邮件返回 `ref`，例如 `{"folder":"INBOX","uid":42,"uidvalidity":7}`。读取、标记和移动都传入完整引用；不要用邮件序号或猜测 UID。`UIDVALIDITY` 变化会拒绝旧引用，移动后的邮件必须重新搜索。
 
@@ -194,7 +196,13 @@ uv run python -m unittest -v test_connector
 
 离线集成检查模拟 IMAP/SMTP，覆盖中文目录和邮件、搜索分页、只读 FETCH、UIDVALIDITY、附件、密送、草稿、标记、移动、SMTP 部分接受/结果不确定、输入注入、HTTP 鉴权、OpenAPI 和 MCP 握手及工具调用。不发送真实邮件，不需要账号。
 
-当前没有真实网易账号和公网部署的联调结果。正式连接后，先列目录和读信，再向你指定的测试收件地址验证发信，并核对已发送文件夹。
+真实邮箱自测与日常离线测试分开，GitHub Actions 仅运行假凭据测试。若要在自己的账号验证真实收发，配置 `.env` 后显式执行：
+
+```sh
+uv run python live_check.py --send-to-self
+```
+
+该命令只向配置的账号自身发一封测试邮件，验证中文正文、附件、标记、移动和草稿，最后将本次测试邮件/草稿保留在垃圾箱。`.live-test-state.json` 记录操作是否已经尝试，重跑不会自动重发；完整通过后再次运行不创建邮件。需要全新一轮测试时，先核查此前结果，再自行移走本地状态文件。真实账号的授权码和实测状态均不上传。
 
 Pi 模板按官方包文档配置，MCP stdio 传输有真实子进程的离线握手检查；未把“协议检查通过”当成“已在你的 Pi 会话连接真实邮箱”。
 

@@ -238,18 +238,27 @@ class Mailbox:
                 result.append({"name": decode_folder(raw), "flags": match[1].decode("ascii").split()})
             return {"folders": result}
 
-    def fetch(self, client, uid, full=False):
+    def fetch_headers(self, client, uids):
         items = "(UID FLAGS RFC822.SIZE BODY.PEEK[HEADER.FIELDS (FROM TO CC SUBJECT DATE MESSAGE-ID REPLY-TO REFERENCES)])"
-        data = checked(client.uid("FETCH", str(uid), items), "FETCH")
-        pair = next((item for item in data if isinstance(item, tuple)), None)
-        if pair is None:
+        data = checked(client.uid("FETCH", ",".join(map(str, uids)), items), "FETCH")
+        result = {}
+        for pair in data:
+            if not isinstance(pair, tuple):
+                continue
+            meta, raw = pair
+            size, uid = re.search(rb"RFC822.SIZE (\d+)", meta), re.search(rb"UID (\d+)", meta)
+            if size is None or uid is None:
+                raise MailError("Server omitted message size or UID")
+            result[int(uid[1])] = (BytesParser(policy=policy.default).parsebytes(raw), meta, int(size[1]))
+        return result
+
+    def fetch(self, client, uid, full=False):
+        found = self.fetch_headers(client, [uid]).get(int(uid))
+        if found is None:
             raise MailError("Message not found; search again")
-        meta, raw = pair
-        size = re.search(rb"RFC822.SIZE (\d+)", meta)
-        if size is None:
-            raise MailError("Server omitted message size")
+        message, meta, size = found
         if full:
-            if int(size[1]) > MAX_MESSAGE_BYTES:
+            if size > MAX_MESSAGE_BYTES:
                 raise MailError("Message exceeds the 20 MiB read limit")
             data = checked(client.uid("FETCH", str(uid), "(UID BODY.PEEK[])"), "FETCH")
             pair = next((item for item in data if isinstance(item, tuple)), None)
@@ -258,7 +267,8 @@ class Mailbox:
             raw = pair[1]
             if len(raw) > MAX_MESSAGE_BYTES:
                 raise MailError("Message exceeds the 20 MiB read limit")
-        return BytesParser(policy=policy.default).parsebytes(raw), meta, int(size[1])
+            message = BytesParser(policy=policy.default).parsebytes(raw)
+        return message, meta, size
 
     def summary(self, message, meta, size, folder, uid, validity):
         flags = imaplib.ParseFlags(meta)
@@ -278,18 +288,41 @@ class Mailbox:
                 if request.before_uid == 1:
                     return {"messages": [], "next_before_uid": None}
                 criteria += ["UID", f"1:{request.before_uid - 1}"]
-            charset = None
             if request.query:
-                charset = "UTF-8"
-                criteria.append(request.field)
                 # A literal keeps Chinese text and IMAP syntax out of the command grammar.
                 client.literal = request.query.encode("utf-8")
-            rows = checked(client.uid("SEARCH", charset, *criteria), "SEARCH")
+                rows = checked(client.uid("SEARCH", "CHARSET", "UTF-8", *criteria, request.field), "SEARCH")
+            else:
+                rows = checked(client.uid("SEARCH", None, *criteria), "SEARCH")
+            fallback = bool(request.query and not (rows[0] or b""))
+            if fallback:
+                rows = checked(client.uid("SEARCH", None, *criteria), "SEARCH")
             # ponytail: SEARCH returns all matching UIDs; use ESEARCH if huge mailboxes require it.
             uids = sorted((int(uid) for uid in (rows[0] or b"").split()), reverse=True)
-            selected = uids[:request.limit]
-            messages = [self.summary(*self.fetch(client, uid), request.folder, uid, client.mailbox_uidvalidity) for uid in selected]
-            return {"messages": messages, "next_before_uid": selected[-1] if len(uids) > len(selected) else None}
+            # ponytail: providers may return empty text searches; scan a bounded page, then expose the next cursor.
+            selected = uids[:(20 if request.field == "TEXT" else 100) if fallback else request.limit]
+            headers = self.fetch_headers(client, selected) if selected else {}
+            messages, scanned = [], 0
+            for uid in selected:
+                scanned += 1
+                if uid not in headers:  # A concurrent client may have moved this email.
+                    continue
+                message, meta, size = headers[uid]
+                if fallback:
+                    if request.field == "TEXT":
+                        message, meta, size = self.fetch(client, uid, full=True)
+                        text = "\n".join(str(v) for v in message.values()) + "\n" + "\n".join(
+                            str(part.get_content()) for part in message.walk() if part.get_content_maintype() == "text")
+                    else:
+                        text = str(message.get(request.field, ""))
+                    if request.query.casefold() not in text.casefold():
+                        continue
+                messages.append(self.summary(message, meta, size, request.folder, uid, client.mailbox_uidvalidity))
+                if len(messages) == request.limit:
+                    break
+            return {"messages": messages, "next_before_uid": selected[scanned - 1] if scanned and len(uids) > scanned else None,
+                    "search_mode": "local_fallback" if fallback else "server", "scanned": scanned,
+                    "notice": "If next_before_uid is present, continue paging even when messages is empty."}
 
     def read_email(self, request: MessageRef):
         with self.connect(request.folder, uidvalidity=request.uidvalidity) as client:
