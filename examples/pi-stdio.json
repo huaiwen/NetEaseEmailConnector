@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "netease_email": {
+      "command": "uv",
+      "args": ["--directory", "${NETEASE_CONNECTOR_DIR}", "run", "--locked", "python", "server.py", "stdio"],
+      "directTools": true,
+      "approveTools": ["send_email", "save_draft", "set_flags", "move_email"]
+    }
+  }
+}

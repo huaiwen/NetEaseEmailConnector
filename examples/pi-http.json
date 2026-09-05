@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "netease_email": {
+      "url": "${NETEASE_CONNECTOR_URL}/mcp",
+      "auth": "bearer",
+      "bearerTokenEnv": "CONNECTOR_API_TOKEN",
+      "directTools": true,
+      "approveTools": ["send_email", "save_draft", "set_flags", "move_email"]
+    }
+  }
+}
