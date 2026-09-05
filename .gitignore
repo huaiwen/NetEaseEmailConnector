@@ -8,4 +8,5 @@ __pycache__/
 .mcp.json
 .pi/
 node_modules/
-
+.live-test-state*
+dist/

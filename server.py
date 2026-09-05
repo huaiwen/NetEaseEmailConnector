@@ -99,7 +99,7 @@ def create_services(mailbox=None, token=None, public_url=None):
     register("send_email", Compose, write=True, description="Send an authorized email, with optional CC/BCC, HTML, attachments and In-Reply-To for replies. Review exact content and recipients with the user first. SMTP outcome may be uncertain; never automatically retry.")
     register("save_draft", Draft, write=True, description="Save a new draft to an existing folder selected from list_folders; does not send. Repeating this call creates another draft.")
     register("set_flags", Flags, write=True, description="Set or clear seen/flagged state for one email. Provide at least one of seen or flagged.")
-    register("move_email", Move, write=True, description="Move one email to an existing folder using atomic UID MOVE. Use the trash folder for recoverable deletion. Fails without changing mail if MOVE is unsupported. Search destination for the new reference.")
+    register("move_email", Move, write=True, description="Move one email using MOVE or confirmed UIDPLUS copy and UID-scoped removal. Use Trash for recoverable deletion. Multi-step failures can leave a copy: inspect both folders before retrying. Search destination for its new reference.")
     api.mount("/", mcp.streamable_http_app())
 
     class BearerAuth:

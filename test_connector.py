@@ -59,6 +59,8 @@ class FakeIMAP:
         return "OK", [b"2"]
 
     def response(self, name):
+        if name == "COPYUID":
+            return name, [b"7 42 43"]
         return name, [b"7"]
 
     def list(self):
@@ -165,6 +167,14 @@ class ConnectorCheck(unittest.TestCase):
             self.assertIn(("STORE", "42", "-FLAGS.SILENT", r"(\Flagged)"), FakeIMAP.instances[-1].calls)
             box.move_email(Move(**REF, destination="已删除"))
             self.assertIn(("MOVE", "42", '"' + encode_folder("已删除") + '"'), FakeIMAP.instances[-1].calls)
+            with patch.object(FakeIMAP, "advertised", b"IMAP4rev1 ID UIDPLUS"):
+                box.move_email(Move(**REF, destination="Trash"))
+                self.assertIn(("COPY", "42", '"Trash"'), FakeIMAP.instances[-1].calls)
+                self.assertIn(("EXPUNGE", "42"), FakeIMAP.instances[-1].calls)
+                with patch.object(FakeIMAP, "response", lambda self, name: (name, [b"7"] if name == "UIDVALIDITY" else [None])):
+                    with self.assertRaisesRegex(MailError, "source kept"):
+                        box.move_email(Move(**REF, destination="Trash"))
+                    self.assertFalse(any(c[0] in {"STORE", "EXPUNGE"} for c in FakeIMAP.instances[-1].calls))
             with patch.object(FakeIMAP, "advertised", b"IMAP4rev1 ID"):
                 with self.assertRaises(MailError):
                     box.move_email(Move(**REF, destination="Trash"))
@@ -250,7 +260,7 @@ class ConnectorCheck(unittest.TestCase):
 
             # stdio and HTTP share the exact registered tool schemas.
             self.assertEqual(len(asyncio.run(mcp.list_tools())), 8)
-            self.assertFalse(any(c[0] in {"EXPUNGE", "CLOSE"} for i in FakeIMAP.instances for c in i.calls))
+            self.assertFalse(any(c in {("EXPUNGE",), ("CLOSE",)} for i in FakeIMAP.instances for c in i.calls))
 
 
 if __name__ == "__main__":

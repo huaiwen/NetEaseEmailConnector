@@ -18,7 +18,14 @@
 
 需要 Python 3.11+ 和 uv。在本项目目录执行：
 
-先克隆或下载本仓库并进入目录。尚未安装 uv 时可参考 [uv 官方安装说明](https://docs.astral.sh/uv/getting-started/installation/)。
+先克隆或下载本仓库并进入目录（当前私有仓库需要访问权限）：
+
+```sh
+git clone git@github.com:huaiwen/NetEaseEmailConnector.git
+cd NetEaseEmailConnector
+```
+
+尚未安装 uv 时可参考 [uv 官方安装说明](https://docs.astral.sh/uv/getting-started/installation/)。
 
 ```sh
 uv sync --locked
@@ -42,7 +49,7 @@ uv run python server.py http
 
 默认只监听 `127.0.0.1:8000`。打开 `http://127.0.0.1:8000/docs`，点 Authorize 填入连接器密钥即可测试。`/health` 只检查进程存活，不验证邮箱登录；第一次调用 `list_folders` 才连接邮箱。
 
-163.com、126.com、yeah.net 自动使用 `imap.<域名>:993` 和 `smtp.<域名>:465`；均启用证书校验。VIP、企业邮箱需要在 `.env` 显式填写官方提供的 `IMAP_HOST`、`SMTP_HOST`，必要时配置端口。当前仅支持隐式 TLS，不支持明文或 STARTTLS 端口。
+163.com、126.com、yeah.net 自动使用 `imap.<域名>:993` 和 `smtp.<域名>:465`；均启用证书校验。VIP、企业邮箱需要在 `.env` 显式填写官方提供的 `IMAP_HOST`、`SMTP_HOST`，必要时配置端口。学校/企业自定义域名若与 TLS 证书不匹配，应按管理员指引配置对应的网易官方服务器名，不能关闭证书校验。当前仅支持隐式 TLS，不支持明文或 STARTTLS 端口。
 
 ## 邮件操作
 
@@ -195,7 +202,7 @@ Pi 模板按官方包文档配置，MCP stdio 传输有真实子进程的离线�
 - 邮件读取/发送上限 20 MiB，单附件 5 MiB，最多 5 个附件。正文最多返回 30,000 字符，并提供截断标记；不自动读取附件内容或渲染 HTML。
 - 发送者固定为配置的网易账号。成功仅代表 SMTP 接受；不额外 APPEND 已发送副本，避免与网易服务器的自动存档重复。已发送存档是否开启应在真实邮箱中确认。
 - 草稿每次新建，不覆盖已有草稿；没有定时发信或发送幂等数据库。网络断开后的写操作结果可能不确定，检查后再决定是否重试。
-- 移动要求服务器支持 `UID MOVE`，不支持时明确拒绝；不会退化为可能误删其他邮件的全局 EXPUNGE。没有永久删除或清空垃圾箱接口。
+- 移动优先使用 `UID MOVE`；只有 `UIDPLUS` 时先 COPY 并核验 COPYUID，再只清除原 UID，保留目标副本。多步操作中断时可能留下副本，应核查两边后处理。两种能力都没有时拒绝移动；永远不执行全局 EXPUNGE。没有永久删除或清空垃圾箱接口。
 - 每次操作独立连接，未做连接池；搜索会取得全部匹配 UID，再截取一页。超大邮箱需要时再升级为 ESEARCH。
 - `/health`、OpenAPI 和文档页面公开，邮件接口全部鉴权。服务不持久化邮件，也不记录邮件正文或授权码；邮件操作期间内容存在进程内存中。
 
@@ -207,7 +214,7 @@ Pi 模板按官方包文档配置，MCP stdio 传输有真实子进程的离线�
 | HTTP 401 | 用连接器 API token，而不是网易授权码；检查代理有没有转发 Authorization |
 | HTTP 400 / MCP 421 | `PUBLIC_BASE_URL` 与请求域名不一致，或代理改写了 Host |
 | IMAP 登录失败 / SELECT 被拒绝 | 网页版是否开启 IMAP，授权码是否有效，客户端是否被网易风控限制；服务会在支持时发送 IMAP ID |
-| MOVE 不支持 | 当前服务器没有原子移动能力；到网页版移动或删除，连接器不会执行全局清除 |
+| MOVE 和 UIDPLUS 都不支持 | 到网页版移动或删除，连接器不会执行全局清除 |
 | 发送结果 unknown | 先按返回的 Message-ID 核查，不能直接再次调用发送 |
 | Pi 没看到工具 | 确认适配器已安装并重启；检查环境变量、配置合并位置及 `/mcp reconnect netease_email` |
 | ChatGPT 超时 / 附件过大 | 减少搜索数量；Actions 有 45 秒和 100,000 字符的平台上限 |

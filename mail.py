@@ -215,7 +215,7 @@ class Mailbox:
             raise MailError("IMAP connection or command failed; check authorization code, IMAP access and network. A write may have completed; inspect before retrying.") from None
         finally:
             if client is not None:
-                # Never CLOSE or EXPUNGE: those can delete unrelated messages.
+                # Never CLOSE or unscoped EXPUNGE: those can delete unrelated messages.
                 with suppress(Exception):
                     client.logout()
 
@@ -388,8 +388,21 @@ class Mailbox:
         if request.folder == request.destination:
             raise MailError("Source and destination must differ")
         with self.connect(request.folder, write=True, uidvalidity=request.uidvalidity) as client:
-            if b"MOVE" not in client.capabilities:
-                raise MailError("Server lacks atomic UID MOVE; message was not changed")
+            if not {b"MOVE", b"UIDPLUS"}.intersection(client.capabilities):
+                raise MailError("Server lacks MOVE and UIDPLUS; message was not changed")
             self.fetch(client, request.uid)
-            checked(client.uid("MOVE", str(request.uid), quote(encode_folder(request.destination))), "MOVE")
+            uid, destination = str(request.uid), quote(encode_folder(request.destination))
+            if b"MOVE" in client.capabilities:
+                checked(client.uid("MOVE", uid, destination), "MOVE")
+            else:
+                # ponytail: UIDPLUS move is multi-step; inspect both folders after failure, never blindly retry.
+                checked(client.uid("COPY", uid, destination), "COPY")
+                copied = client.response("COPYUID")[1]
+                if not copied or not copied[0] or not re.fullmatch(rb"[1-9][0-9]* " + uid.encode() + rb" [1-9][0-9]*", copied[0]):
+                    raise MailError("Copy was not confirmed by COPYUID; source kept. Inspect both folders before retrying.")
+                try:
+                    checked(client.uid("STORE", uid, "+FLAGS.SILENT", r"(\Deleted)"), "STORE")
+                    checked(client.uid("EXPUNGE", uid), "UID EXPUNGE")
+                except MailError:
+                    raise MailError("Copy succeeded but removing the source failed. Inspect both folders before retrying.") from None
         return {"status": "moved", "destination": request.destination, "notice": "Search the destination for its new UID. Moving to Trash is recoverable; no permanent deletion tool is exposed."}
