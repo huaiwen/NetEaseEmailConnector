@@ -10,7 +10,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from mail import AttachmentRef, Compose, Draft, Flags, Mailbox, MessageRef, Move, Search
+from mail import AttachmentRef, Compose, Draft, Flags, Mailbox, MailError, MessageRef, Move, Search
 
 
 def main():
@@ -42,7 +42,13 @@ def main():
 
     def find(folder, suffix, wait=False):
         for attempt in range(12 if wait else 1):
-            results = box.search_emails(Search(folder=folder, query=state["marker"] + suffix, limit=2))["messages"]
+            try:
+                results = box.search_emails(Search(folder=folder, query=state["marker"] + suffix, limit=2))["messages"]
+            except MailError as exc:
+                # NetEase's index can expose a just-moved UID before FETCH can read it.
+                if not wait or "IMAP FETCH failed" not in str(exc) or attempt == 11:
+                    raise
+                results = []
             if results:
                 if len(results) != 1:
                     raise RuntimeError("Multiple test messages found; inspect before continuing")
@@ -64,7 +70,7 @@ def main():
         save()
         if result["status"] != "accepted":
             raise RuntimeError("SMTP did not accept all test recipients; inspect mailbox before continuing")
-    ref = find("INBOX", "-mail", wait=True) or find(trash, "-mail")
+    ref = find("INBOX", "-mail") or find(trash, "-mail") or find("INBOX", "-mail", wait=True)
     if not ref:
         raise RuntimeError("Test email not found. Send was already attempted; it will not be retried. Check delivery manually.")
     print("PASS: send_email and search_emails (self-delivery)", flush=True)
@@ -82,20 +88,20 @@ def main():
     if ref["folder"] != trash:
         box.move_email(Move(**ref, destination=trash))
         assert not find("INBOX", "-mail"), "Source message still present"
-    assert find(trash, "-mail"), "Destination message missing"
+    assert find(trash, "-mail", wait=True), "Destination message missing"
     print("PASS: move_email; test email retained in Trash", flush=True)
 
     if not state.get("draft_attempted"):
         state["draft_attempted"] = True
         save()
         box.save_draft(Draft(**{**payload, "subject": "连接器草稿测试 " + state["marker"] + "-draft"}, folder=drafts))
-    draft_ref = find(drafts, "-draft") or find(trash, "-draft")
+    draft_ref = find(drafts, "-draft") or find(trash, "-draft") or find(drafts, "-draft", wait=True)
     if not draft_ref:
         raise RuntimeError("Draft was attempted but not found; inspect manually, no automatic duplicate append")
     assert payload["text"] in box.read_email(MessageRef(**draft_ref))["body"]
     if draft_ref["folder"] != trash:
         box.move_email(Move(**draft_ref, destination=trash))
-    assert find(trash, "-draft"), "Moved draft missing"
+    assert find(trash, "-draft", wait=True), "Moved draft missing"
     state["completed"] = True
     save()
     print("PASS: save_draft; test draft retained in Trash", flush=True)
