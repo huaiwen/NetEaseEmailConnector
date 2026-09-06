@@ -40,9 +40,11 @@ jobs:
               if path.suffix in {'.whl', '.zip'}:
                   with zipfile.ZipFile(path) as archive:
                       names = archive.namelist()
-              else:
+              elif path.name.endswith(('.tar.gz', '.tgz')):
                   with tarfile.open(path) as archive:
                       names = archive.getnames()
+              else:
+                  continue
               assert all(Path(n).name not in {'.env', '.live-test-state.json'} for n in names)
           PY
       - name: Publish release
