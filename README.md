@@ -9,7 +9,8 @@
 | 客户端 | 接入方式 |
 | --- | --- |
 | ChatGPT 自定义 GPT | Actions 导入 `/openapi.json`，使用 API Key/Bearer |
-| Grok bot / xAI API | Remote MCP，地址 `/mcp`，附带 Authorization |
+| Grok Bot 桌面应用 | [Bot 模板内容](examples/grok-bot-template.md)，在 Bot 的运行电脑配置 CLI/Skill 或远程 MCP |
+| xAI API bot | Remote MCP，地址 `/mcp`，附带 Authorization |
 | Pi Agent | `pi-mcp-adapter`，支持本地 stdio 和远程 HTTP，附现成配置 |
 | 支持 MCP 的本地客户端 | stdio 启动 `server.py stdio`，无需公网部署 |
 | 自己的 bot、脚本 | HTTP API，调用 `/api/<工具名>` |
@@ -89,6 +90,12 @@ codex plugin add netease-email@huaiwen-mail-tools
 
 插件携带 Skill 和 stdio MCP 配置，需 uv；安装后在新会话中使用。也可以直接安装上述单独 Skill。插件市场属于本项目维护的社区市场，不表示已进入 OpenAI 官方目录。CLI 子命令可能随 Codex 版本变化，可运行 `codex plugin --help` 检查。
 
+### Grok Bot 模板市场
+
+[Grok Bot 市场](https://x.ai/bot/marketplace) 分享的是 Bot 模板，与 Grok Build 的插件目录不同。本仓库准备了[可复制的 Bot 名称、简介、完整行为说明和起始问题](examples/grok-bot-template.md)，用于创建一个独立的网易邮箱助手。用户也可把前文 Agent 安装指令发给已有 Bot，让其在自己的运行电脑安装。
+
+Bot 可能运行在云端电脑：必须在**执行连接器的那台电脑**配置账号，不能访问用户本机的 stdio 或 localhost。配置好后用户只需描述邮件任务。公开模板不包含维护者或其他用户的登录、邮箱、邮件和凭据。目前没有本项目的已发布 x.ai/bot 分享链接，不能将 Grok Build 插件安装当成模板市场上架。
+
 ### Grok Build 插件
 
 先完成 setup，然后使用本项目的社区市场：
@@ -104,6 +111,7 @@ grok plugin install netease-email --trust
 
 - Git 安装、源码/Skill/插件：随本仓库 `v0.2.0` 提供；MIT 许可证，每位用户配置自己的邮箱。
 - Pi npm 目录：已准备 npm 包，发布需 npm 账号登录；未发布时使用 Git 安装，不依赖目录收录。
+- Grok Bot：模板资料已提供，尚未发布官方分享链接。
 - Grok Build：自建社区市场可安装；官方 `xai-org/plugin-marketplace` 收录需要提交 PR 并经过维护者审核。
 - OpenAI：提供 Codex 自定义插件与 Skill。官方公开目录提交还需要平台提交权限、发布者身份验证及审核；当前没有托管的多用户邮箱服务。ChatGPT 自定义 GPT 可继续用下文 Actions。不能将维护者的个人邮箱绑定到公开 GPT。
 

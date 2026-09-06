@@ -22,7 +22,11 @@ npm publish --access public
 
 包名 `netease-email-connector`。没有 postinstall 脚本，使用 files 白名单；npm 启动器复用 uv，要求客户端已安装 uv。发布成功后用户可以 `pi install npm:netease-email-connector@0.2.0`。npm 目录同步是第三方索引行为，包发布成功不等于目录已显示。
 
-## Grok 官方市场
+## Grok Bot 模板
+
+见 [examples/grok-bot-template.md](examples/grok-bot-template.md)。这是桌面 Grok Bot 模板，分享链接与市场收录需在其产品中完成；不是 Grok Build 插件或 xAI API 配置。模板内容不得包含任意真实账号或凭据。
+
+## Grok Build 官方市场
 
 官方索引：https://github.com/xai-org/plugin-marketplace 。先公开本仓库并固定 release commit，再按其 CONTRIBUTING.md 创建 PR：添加 remote source 指向本仓库插件子目录，固定完整 SHA，运行官方 component index generator 和 catalog validator。不得把个人邮箱或授权码提供给市场评审；测试使用假凭据和只读路径。
 
