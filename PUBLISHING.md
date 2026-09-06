@@ -14,6 +14,8 @@
 
 在维护者终端完成 `npm login` 后，运行 `npm whoami` 验证。不要提交 npm token。
 
+npm 发布还需要账号启用 2FA；若返回该要求，先在 npm 账号页面完成设置，再在自己的终端运行发布命令并完成验证。不要把验证码发给 Agent 或写入仓库。
+
 ```sh
 uv run python -m unittest -v test_connector test_install
 npm pack --dry-run
@@ -29,6 +31,8 @@ npm publish --access public
 ## Grok Build 官方市场
 
 官方索引：https://github.com/xai-org/plugin-marketplace 。先公开本仓库并固定 release commit，再按其 CONTRIBUTING.md 创建 PR：添加 remote source 指向本仓库插件子目录，固定完整 SHA，运行官方 component index generator 和 catalog validator。不得把个人邮箱或授权码提供给市场评审；测试使用假凭据和只读路径。
+
+收录申请已提交：https://github.com/xai-org/plugin-marketplace/pull/580 。
 
 本项目的社区市场无需等待官方收录。官方 PR 通过与合并时间由维护者决定。
 

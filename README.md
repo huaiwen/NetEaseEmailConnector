@@ -4,14 +4,14 @@
 
 这是社区项目，与网易、OpenAI、xAI 和 Pi 无隶属关系。适合把自己的网易邮箱接入私人 AI 助手；尚未作为多用户邮件服务发布。
 
-当前版本：`v0.2.0`。变更及已验证范围见 [CHANGELOG](CHANGELOG.md)。
+当前版本：[v0.2.0（下载安装包）](https://github.com/huaiwen/NetEaseEmailConnector/releases/tag/v0.2.0)。变更及已验证范围见 [CHANGELOG](CHANGELOG.md)。
 
 | 客户端 | 接入方式 |
 | --- | --- |
 | ChatGPT 自定义 GPT | Actions 导入 `/openapi.json`，使用 API Key/Bearer |
 | Grok Bot 桌面应用 | [Bot 模板内容](examples/grok-bot-template.md)，在 Bot 的运行电脑配置 CLI/Skill 或远程 MCP |
 | xAI API bot | Remote MCP，地址 `/mcp`，附带 Authorization |
-| Pi Agent | `pi-mcp-adapter`，支持本地 stdio 和远程 HTTP，附现成配置 |
+| Pi Agent | 一条 Git 命令安装 Skill；也可通过 `pi-mcp-adapter` 接入 MCP |
 | 支持 MCP 的本地客户端 | stdio 启动 `server.py stdio`，无需公网部署 |
 | 自己的 bot、脚本 | HTTP API，调用 `/api/<工具名>` |
 
@@ -68,7 +68,7 @@ pi install git:github.com/huaiwen/NetEaseEmailConnector@v0.2.0
 
 ### 只下载 Skill / MCP
 
-- Skill：[netease-email/SKILL.md](plugins/netease-email/skills/netease-email/SKILL.md)。将整个 `netease-email` 目录复制到 `~/.agents/skills/`，Codex、Pi 和 Grok Build 可发现；也可使用各客户端自己的 skills 目录。Skill 是指导文件，实际操作由首次安装的 CLI 执行。
+- Skill：[下载 ZIP](https://github.com/huaiwen/NetEaseEmailConnector/releases/download/v0.2.0/netease-email-skill.zip) 或查看 [SKILL.md](plugins/netease-email/skills/netease-email/SKILL.md)。将解压后的整个 `netease-email` 目录复制到 `~/.agents/skills/`，Codex、Pi 和 Grok Build 可发现；也可使用各客户端自己的 skills 目录。Skill 是指导文件，实际操作由首次安装的 CLI 执行。
 - MCP：[通用配置](examples/mcp.json)。有 uv 即可按固定版本启动，首次启动下载依赖；用户先完成 setup。已有 MCP 配置请仅合并 `netease_email` 条目。
 - 无需运行常驻服务的 Agent 可直接使用 CLI：
 
@@ -109,10 +109,10 @@ grok plugin install netease-email --trust
 
 ## 分发状态
 
-- Git 安装、源码/Skill/插件：随本仓库 `v0.2.0` 提供；MIT 许可证，每位用户配置自己的邮箱。
-- Pi npm 目录：已准备 npm 包，发布需 npm 账号登录；未发布时使用 Git 安装，不依赖目录收录。
+- Git 安装、源码/Skill/插件：[v0.2.0 Release](https://github.com/huaiwen/NetEaseEmailConnector/releases/tag/v0.2.0) 已发布，包含 wheel、源码包、Pi npm 包归档及 Skill/插件 ZIP；MIT 许可证，每位用户配置自己的邮箱。
+- Pi npm 目录：已准备 npm 包；发布请求被 npm 的 2FA 要求阻止，尚未确认发布。当前使用 Git 安装，不依赖目录收录。
 - Grok Bot：模板资料已提供，尚未发布官方分享链接。
-- Grok Build：自建社区市场可安装；官方 `xai-org/plugin-marketplace` 收录需要提交 PR 并经过维护者审核。
+- Grok Build：自建社区市场可安装；已提交官方收录 [PR #580](https://github.com/xai-org/plugin-marketplace/pull/580)，等待维护者审核。
 - OpenAI：提供 Codex 自定义插件与 Skill。官方公开目录提交还需要平台提交权限、发布者身份验证及审核；当前没有托管的多用户邮箱服务。ChatGPT 自定义 GPT 可继续用下文 Actions。不能将维护者的个人邮箱绑定到公开 GPT。
 
 提交资料及验证案例见 [PUBLISHING.md](PUBLISHING.md)。OpenAI 官方说明允许 Skill-only 或 MCP 插件，但 MCP 提交需实际可访问的服务地址；本项目不将 localhost 当作云端服务。[OpenAI 提交文档](https://developers.openai.com/plugins/deploy/submission)
