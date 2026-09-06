@@ -12,6 +12,8 @@
 
 ## npm / Pi 目录
 
+`netease-email-connector@0.2.0` 已公开发布：[npm 页面](https://www.npmjs.com/package/netease-email-connector/v/0.2.0)。已用独立 Pi 配置验证 npm 安装、Skill 发现和 CLI 工具列表；Pi 目录索引尚未显示。
+
 在维护者终端完成 `npm login` 后，运行 `npm whoami` 验证。不要提交 npm token。
 
 npm 发布还需要账号启用 2FA；若返回该要求，先在 npm 账号页面完成设置，再在自己的终端运行发布命令并完成验证。不要把验证码发给 Agent 或写入仓库。
@@ -22,7 +24,7 @@ npm pack --dry-run
 npm publish --access public
 ```
 
-包名 `netease-email-connector`。没有 postinstall 脚本，使用 files 白名单；npm 启动器复用 uv，要求客户端已安装 uv。发布成功后用户可以 `pi install npm:netease-email-connector@0.2.0`。npm 目录同步是第三方索引行为，包发布成功不等于目录已显示。
+包名 `netease-email-connector`。没有 postinstall 脚本，使用 files 白名单；npm 启动器复用 uv，要求客户端已安装 uv。用户可以 `pi install npm:netease-email-connector@0.2.0`。Pi 目录同步是第三方索引行为，包发布成功不等于目录已显示。同一 npm 版本不能重复发布；后续更新先修改版本并完成测试。
 
 ## Grok Bot 模板
 

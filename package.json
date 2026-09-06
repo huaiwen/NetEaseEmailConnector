@@ -4,7 +4,7 @@
   "description": "Community NetEase mailbox tools for Pi, MCP and agent skills; configure locally once",
   "license": "MIT",
   "author": "huaiwen",
-  "repository": {"type": "git", "url": "https://github.com/huaiwen/NetEaseEmailConnector.git"},
+  "repository": {"type": "git", "url": "git+https://github.com/huaiwen/NetEaseEmailConnector.git"},
   "homepage": "https://github.com/huaiwen/NetEaseEmailConnector#readme",
   "keywords": ["pi-package", "netease-mail", "mcp", "agent-skills"],
   "bin": {"netease-email-connector": "bin/connector.mjs"},

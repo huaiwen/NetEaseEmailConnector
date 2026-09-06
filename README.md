@@ -11,7 +11,7 @@
 | ChatGPT 自定义 GPT | Actions 导入 `/openapi.json`，使用 API Key/Bearer |
 | Grok Bot 桌面应用 | [Bot 模板内容](examples/grok-bot-template.md)，在 Bot 的运行电脑配置 CLI/Skill 或远程 MCP |
 | xAI API bot | Remote MCP，地址 `/mcp`，附带 Authorization |
-| Pi Agent | 一条 Git 命令安装 Skill；也可通过 `pi-mcp-adapter` 接入 MCP |
+| Pi Agent | 一条 npm 或 Git 命令安装 Skill；也可通过 `pi-mcp-adapter` 接入 MCP |
 | 支持 MCP 的本地客户端 | stdio 启动 `server.py stdio`，无需公网部署 |
 | 自己的 bot、脚本 | HTTP API，调用 `/api/<工具名>` |
 
@@ -59,12 +59,12 @@ netease-email-connector mcp-config   # 输出本机 MCP 配置，不含密钥
 ### Pi 一次安装 Skill
 
 ```sh
-pi install git:github.com/huaiwen/NetEaseEmailConnector@v0.2.0
+pi install npm:netease-email-connector@0.2.0
 ```
 
 重启 Pi，输入 `/skill:netease-email`，或说“帮我配置网易邮箱，列出目录”。Skill 会复用已安装 CLI；若缺少，会指导 Agent 安装。**Skill 路线不需要 pi-mcp-adapter**。需要将 8 个操作常驻为 MCP 工具时，使用下文 Pi MCP 接入。
 
-本仓库也有带 `pi-package` 关键字的 npm 包及 CLI 启动器；Pi 官方目录从 npm 发现包。npm 上架状态见 [分发状态](#分发状态)，在确认发布前使用上面的 Git 安装命令。[Pi 官方包文档](https://pi.dev/docs/latest/packages)
+[npm 包 v0.2.0](https://www.npmjs.com/package/netease-email-connector/v/0.2.0) 已发布，包含 `pi-package` 关键字、Skill 和 CLI 启动器。也可用 `pi install git:github.com/huaiwen/NetEaseEmailConnector@v0.2.0` 安装同一版本。Pi 官方目录从 npm 发现包，索引同步可能延迟，不影响上述安装命令。[Pi 官方包文档](https://pi.dev/docs/latest/packages)
 
 ### 只下载 Skill / MCP
 
@@ -110,7 +110,7 @@ grok plugin install netease-email --trust
 ## 分发状态
 
 - Git 安装、源码/Skill/插件：[v0.2.0 Release](https://github.com/huaiwen/NetEaseEmailConnector/releases/tag/v0.2.0) 已发布，包含 wheel、源码包、Pi npm 包归档及 Skill/插件 ZIP；MIT 许可证，每位用户配置自己的邮箱。
-- Pi npm 目录：已准备 npm 包；发布请求被 npm 的 2FA 要求阻止，尚未确认发布。当前使用 Git 安装，不依赖目录收录。
+- Pi / npm：[netease-email-connector@0.2.0](https://www.npmjs.com/package/netease-email-connector/v/0.2.0) 已公开发布，Pi npm 安装、Skill 发现及 CLI 启动已验证；Pi 目录搜索暂未显示，等待索引同步。
 - Grok Bot：模板资料已提供，尚未发布官方分享链接。
 - Grok Build：自建社区市场可安装；已提交官方收录 [PR #580](https://github.com/xai-org/plugin-marketplace/pull/580)，等待维护者审核。
 - OpenAI：提供 Codex 自定义插件与 Skill。官方公开目录提交还需要平台提交权限、发布者身份验证及审核；当前没有托管的多用户邮箱服务。ChatGPT 自定义 GPT 可继续用下文 Actions。不能将维护者的个人邮箱绑定到公开 GPT。
