@@ -4,7 +4,7 @@
 
 这是社区项目，与网易、OpenAI、xAI 和 Pi 无隶属关系。适合把自己的网易邮箱接入私人 AI 助手；尚未作为多用户邮件服务发布。
 
-当前版本：`v0.1.0`。变更及已验证范围见 [CHANGELOG](CHANGELOG.md)。
+当前版本：`v0.2.0`。变更及已验证范围见 [CHANGELOG](CHANGELOG.md)。
 
 | 客户端 | 接入方式 |
 | --- | --- |
@@ -16,14 +16,107 @@
 
 这里的 ChatGPT 接入指自定义 GPT Actions；没有实现 ChatGPT 原生应用所需的 OAuth 登录，也不保证 Grok 消费端网页可以添加任意自建连接器。平台账户需要具备相应功能。实现参考 [OpenAI Actions 接入文档](https://developers.openai.com/api/docs/actions/getting-started)、[鉴权文档](https://developers.openai.com/api/docs/actions/authentication)和 [xAI Remote MCP 文档](https://docs.x.ai/developers/tools/remote-mcp)。
 
-## 本地运行
+## 让 Agent 帮你安装（推荐）
+
+将下面这段话直接发给 **Codex、Pi、Grok Build 或其他能执行本地命令的 Agent**：
+
+```text
+请安装 https://github.com/huaiwen/NetEaseEmailConnector 的 v0.2.0。
+先阅读仓库 INSTALL.md，再检查 uv 和 Python 3.11+。
+安装连接器及适合当前客户端的 netease-email Skill 或 MCP 配置；保留已有的其他配置。
+让我在自己的终端运行 setup 隐藏输入邮箱授权码，不要要求我把密码发到聊天中。
+配置完成后执行 doctor，再列出邮件工具确认可用；不要发送测试邮件或修改已有邮件。
+```
+
+Agent 的具体执行步骤见 [INSTALL.md](INSTALL.md)。普通云端聊天无法直接安装本机程序；应在具有终端权限的 Agent 中执行。
+
+## 两步配置
+
+先准备 [uv](https://docs.astral.sh/uv/getting-started/installation/)，它可以管理所需 Python 环境：
+
+```sh
+uv tool install 'git+https://github.com/huaiwen/NetEaseEmailConnector.git@v0.2.0'
+netease-email-connector setup
+```
+
+若命令不在 PATH，运行 `uv tool update-shell` 后重开终端，或使用 `uv tool dir --bin` 中的完整路径。也可以把命令前缀换成：
+
+```sh
+uvx --from 'git+https://github.com/huaiwen/NetEaseEmailConnector.git@v0.2.0' netease-email-connector setup
+```
+
+向导依次询问邮箱、隐藏输入的客户端授权码、企业邮箱服务器（普通 163/126/yeah 自动选择）和是否启用写入。默认只读，自动生成 API 密钥，保存到 `~/.config/netease-email-connector/.env`（权限 0600）。升级/重新安装不会覆盖此文件。再次运行 setup 会拒绝覆盖；修改配置请用本机编辑器打开此文件。
+
+```sh
+netease-email-connector doctor       # 只检查 IMAP 登录，不发送、不读取正文
+netease-email-connector tools        # 输出 8 个操作的 JSON schema
+netease-email-connector mcp-config   # 输出本机 MCP 配置，不含密钥
+```
+
+`NETEASE_ENV_FILE` 或全局参数 `--env-file /absolute/path/.env` 可选择其他配置。优先级：已有进程环境变量 > 指定文件；没有指定文件时读取上述用户配置。安装版不会从 Agent 的当前项目自动寻找 `.env`。文件内容不进行 `${...}` 插值，授权码中的特殊字符按字面保留。
+
+### Pi 一次安装 Skill
+
+```sh
+pi install git:github.com/huaiwen/NetEaseEmailConnector@v0.2.0
+```
+
+重启 Pi，输入 `/skill:netease-email`，或说“帮我配置网易邮箱，列出目录”。Skill 会复用已安装 CLI；若缺少，会指导 Agent 安装。**Skill 路线不需要 pi-mcp-adapter**。需要将 8 个操作常驻为 MCP 工具时，使用下文 Pi MCP 接入。
+
+本仓库也有带 `pi-package` 关键字的 npm 包及 CLI 启动器；Pi 官方目录从 npm 发现包。npm 上架状态见 [分发状态](#分发状态)，在确认发布前使用上面的 Git 安装命令。[Pi 官方包文档](https://pi.dev/docs/latest/packages)
+
+### 只下载 Skill / MCP
+
+- Skill：[netease-email/SKILL.md](plugins/netease-email/skills/netease-email/SKILL.md)。将整个 `netease-email` 目录复制到 `~/.agents/skills/`，Codex、Pi 和 Grok Build 可发现；也可使用各客户端自己的 skills 目录。Skill 是指导文件，实际操作由首次安装的 CLI 执行。
+- MCP：[通用配置](examples/mcp.json)。有 uv 即可按固定版本启动，首次启动下载依赖；用户先完成 setup。已有 MCP 配置请仅合并 `netease_email` 条目。
+- 无需运行常驻服务的 Agent 可直接使用 CLI：
+
+```sh
+netease-email-connector call list_folders
+printf '%s' '{"folder":"INBOX","limit":5}' | netease-email-connector call search_emails
+```
+
+其他操作参数参见 `tools` 输出，以 JSON 从 stdin 传入。写操作还需 `--confirm-write`，表示调用者已取得用户对本次操作的授权；它本身不是人工审批系统。服务端只读配置仍然生效。
+
+### Codex 自定义插件
+
+仓库包含 `.agents/plugins/marketplace.json` 和 `plugins/netease-email/.codex-plugin/plugin.json`。先完成 setup，然后：
+
+```sh
+codex plugin marketplace add https://github.com/huaiwen/NetEaseEmailConnector.git
+codex plugin add netease-email@huaiwen-mail-tools
+```
+
+插件携带 Skill 和 stdio MCP 配置，需 uv；安装后在新会话中使用。也可以直接安装上述单独 Skill。插件市场属于本项目维护的社区市场，不表示已进入 OpenAI 官方目录。CLI 子命令可能随 Codex 版本变化，可运行 `codex plugin --help` 检查。
+
+### Grok Build 插件
+
+先完成 setup，然后使用本项目的社区市场：
+
+```sh
+grok plugin marketplace add huaiwen/NetEaseEmailConnector
+grok plugin install netease-email --trust
+```
+
+`--trust` 会允许插件中的本地 MCP 和 Skill 运行。重启或刷新 Plugins 页面；`grok plugin list` 检查是否启用。这是 **Grok Build 的本地插件**，xAI API 的 bot 仍使用后文 Remote MCP；不代表在 grok.com 任意聊天界面均可安装。[Grok 官方插件指南](https://github.com/xai-org/grok-build/blob/main/crates/codegen/xai-grok-pager/docs/user-guide/09-plugins.md)
+
+## 分发状态
+
+- Git 安装、源码/Skill/插件：随本仓库 `v0.2.0` 提供；MIT 许可证，每位用户配置自己的邮箱。
+- Pi npm 目录：已准备 npm 包，发布需 npm 账号登录；未发布时使用 Git 安装，不依赖目录收录。
+- Grok Build：自建社区市场可安装；官方 `xai-org/plugin-marketplace` 收录需要提交 PR 并经过维护者审核。
+- OpenAI：提供 Codex 自定义插件与 Skill。官方公开目录提交还需要平台提交权限、发布者身份验证及审核；当前没有托管的多用户邮箱服务。ChatGPT 自定义 GPT 可继续用下文 Actions。不能将维护者的个人邮箱绑定到公开 GPT。
+
+提交资料及验证案例见 [PUBLISHING.md](PUBLISHING.md)。OpenAI 官方说明允许 Skill-only 或 MCP 插件，但 MCP 提交需实际可访问的服务地址；本项目不将 localhost 当作云端服务。[OpenAI 提交文档](https://developers.openai.com/plugins/deploy/submission)
+
+## 从源码运行（开发/自托管）
 
 需要 Python 3.11+ 和 uv。在本项目目录执行：
 
-先克隆或下载本仓库并进入目录（当前私有仓库需要访问权限）：
+先克隆或下载本仓库并进入目录：
 
 ```sh
-git clone git@github.com:huaiwen/NetEaseEmailConnector.git
+git clone --branch v0.2.0 https://github.com/huaiwen/NetEaseEmailConnector.git
 cd NetEaseEmailConnector
 ```
 
@@ -143,7 +236,7 @@ stdio 使用本地进程权限，不经过 HTTP Bearer 鉴权；只将配置交�
 
 ## Pi Agent 接入
 
-复用 [pi-mcp-adapter](https://pi.dev/packages/pi-mcp-adapter)，不需要单独的网易 Pi 扩展。Pi 需要 Node.js 22.19+；安装或准备好 Pi 后执行：
+若希望常驻 MCP 工具，复用 [pi-mcp-adapter](https://pi.dev/packages/pi-mcp-adapter)，也可以只用前文的 Pi Skill 包。Pi 需要 Node.js 22.19+；安装或准备好 Pi 后执行：
 
 ```sh
 pi install npm:pi-mcp-adapter
@@ -174,7 +267,7 @@ export NETEASE_CONNECTOR_URL=https://mail-tools.example.com
 pi
 ```
 
-URL 不带结尾斜杠。`CONNECTOR_API_TOKEN` 应通过 shell 环境或密钥管理工具提供，适配器用 `bearerTokenEnv` 读取；可在自己的电脑使用 `http://127.0.0.1:8000` 做本地测试。全局使用时将服务器条目合并进 `~/.config/mcp/mcp.json`。
+URL 不带结尾斜杠。`CONNECTOR_API_TOKEN` 应通过 shell 环境或密钥管理工具提供，适配器用 `bearerTokenEnv` 读取；可在自己的电脑使用 `http://127.0.0.1:8000` 做本地测试。安装版可将 `netease-email-connector mcp-config` 的输出作为本地条目，加上 `directTools` 与 `approveTools`；不要把安装版的用户配置和源码版 `.env` 混用。全局使用时将服务器条目合并进 `~/.config/mcp/mcp.json`。
 
 ### 在 Pi 中验证
 
@@ -193,7 +286,7 @@ Pi 适配器可能缓存工具元数据，并在客户端会话/临时文件中�
 ## 验证与边界
 
 ```sh
-uv run python -m unittest -v test_connector
+uv run python -m unittest -v test_connector test_install
 ```
 
 离线集成检查模拟 IMAP/SMTP，覆盖中文目录和邮件、搜索分页、只读 FETCH、UIDVALIDITY、附件、密送、草稿、标记、移动、SMTP 部分接受/结果不确定、输入注入、HTTP 鉴权、OpenAPI 和 MCP 握手及工具调用。不发送真实邮件，不需要账号。
@@ -233,9 +326,9 @@ Pi 模板按官方包文档配置，MCP stdio 传输有真实子进程的离线�
 
 ## 参与开发与开源
 
-代码按 [MIT License](LICENSE) 开源。主逻辑在 `mail.py`，协议接口在 `server.py`；新客户端优先复用现有 MCP/HTTP 接口。
+代码按 [MIT License](LICENSE) 开源。主逻辑在 `netease_email/mail.py`，协议接口在 `netease_email/server.py`，配置和命令行在 `netease_email/cli.py`；新客户端优先复用现有 MCP/HTTP 接口。
 
-修改后执行 `uv run python -m unittest -v test_connector`。回归检查应使用模拟邮件和假凭据，不能要求贡献者接入个人邮箱。依赖精确版本由 `uv.lock` 固定；修改依赖时同时更新锁文件。
+修改后执行 `uv run python -m unittest -v test_connector test_install`。回归检查应使用模拟邮件和假凭据，不能要求贡献者接入个人邮箱。依赖精确版本由 `uv.lock` 固定；修改依赖时同时更新锁文件。
 
 提交问题时请附 Python、操作系统、客户端版本和脱敏错误，不要上传 `.env`、授权码、API token 或真实邮件。认证绕过、邮件泄露等安全问题应通过托管平台的私密安全报告渠道联系维护者，不要在公开 Issue 中附上利用细节和个人数据。
 

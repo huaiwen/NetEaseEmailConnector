@@ -10,3 +10,8 @@ __pycache__/
 node_modules/
 .live-test-state*
 dist/
+build/
+*.egg-info/
+*.tgz
+
+!plugins/netease-email/.mcp.json

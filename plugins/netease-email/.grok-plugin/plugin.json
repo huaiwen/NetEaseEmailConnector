@@ -1,0 +1,11 @@
+{
+  "name": "netease-email",
+  "version": "0.2.0",
+  "description": "Community NetEase mailbox connector with local setup, mail tools and an agent skill",
+  "author": {
+    "name": "huaiwen",
+    "url": "https://github.com/huaiwen"
+  },
+  "homepage": "https://github.com/huaiwen/NetEaseEmailConnector",
+  "license": "MIT"
+}

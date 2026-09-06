@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "netease_email": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/huaiwen/NetEaseEmailConnector.git@v0.2.0",
+        "netease-email-connector",
+        "stdio"
+      ]
+    }
+  }
+}

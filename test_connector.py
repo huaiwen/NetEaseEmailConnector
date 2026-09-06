@@ -16,9 +16,9 @@ from pydantic import ValidationError
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
-from mail import (Attachment, AttachmentRef, Compose, Draft, Flags, Mailbox, MailError,
+from netease_email.mail import (Attachment, AttachmentRef, Compose, Draft, Flags, Mailbox, MailError,
                   MessageRef, Move, Search, decode_folder, encode_folder)
-from server import create_services
+from netease_email.server import create_services
 
 ENV = {"NETEASE_EMAIL": "test@163.com", "NETEASE_AUTH_CODE": "fake-authorization-code",
        "MAIL_READ_ONLY": "false"}
@@ -131,7 +131,7 @@ class ConnectorCheck(unittest.TestCase):
         asyncio.run(check())
 
     def test_offline_workflow(self):
-        with patch.dict(os.environ, ENV, clear=True), patch("mail.imaplib.IMAP4_SSL", FakeIMAP), patch("mail.smtplib.SMTP_SSL", FakeSMTP):
+        with patch.dict(os.environ, ENV, clear=True), patch("netease_email.mail.imaplib.IMAP4_SSL", FakeIMAP), patch("netease_email.mail.smtplib.SMTP_SSL", FakeSMTP):
             box = Mailbox()
             for name in ["INBOX", "草稿箱", "已删除 & Archive", '项目 "A"', "📬"]:
                 self.assertEqual(decode_folder(encode_folder(name).encode()), name)

@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.2.0 — 2026-09-06
+
+- 可安装 Python CLI、Pi/npm 包、独立 Agent Skill 和 Codex/Grok Build 插件清单。
+- 隐藏输入的配置向导、用户目录配置、只读默认值、无副作用 doctor、JSON 工具调用与 MCP 配置导出。
+- 旧源码 `server.py` 启动方式保留；内部 Python 模块移入 `netease_email` 包。
+- README 新增 Agent 一段话安装入口；INSTALL.md 提供确定步骤，配置文件不随升级覆盖。
+- 新增安装/config/CLI/stdio 检查；延用 v0.1.0 的实测邮箱行为，本次不重复发送邮件。
+- 官方市场审核、npm 发布身份和云端 ChatGPT 部署分别处理，不等同于本地包验证通过。
+
+
 ## 0.1.0 — 2026-09-06
 
 首次发布，提供单账号自托管的网易邮箱连接器。

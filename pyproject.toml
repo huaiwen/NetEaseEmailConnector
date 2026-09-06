@@ -1,6 +1,6 @@
 [project]
 name = "netease-email-connector"
-version = "0.1.0"
+version = "0.2.0"
 description = "NetEase IMAP/SMTP tools for GPT Actions, MCP clients and bots"
 readme = "README.md"
 license = "MIT"
@@ -9,3 +9,13 @@ dependencies = ["fastapi>=0.115,<1", "mcp>=1.26,<2", "uvicorn>=0.34,<1", "python
 
 [dependency-groups]
 dev = ["httpx>=0.28,<1"]
+
+[build-system]
+requires = ["setuptools>=77,<83"]
+build-backend = "setuptools.build_meta"
+
+[project.scripts]
+netease-email-connector = "netease_email.cli:main"
+
+[tool.setuptools]
+packages = ["netease_email"]

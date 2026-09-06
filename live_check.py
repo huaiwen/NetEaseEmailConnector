@@ -10,7 +10,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from mail import AttachmentRef, Compose, Draft, Flags, Mailbox, MailError, MessageRef, Move, Search
+from netease_email.mail import AttachmentRef, Compose, Draft, Flags, Mailbox, MailError, MessageRef, Move, Search
 
 
 def main():

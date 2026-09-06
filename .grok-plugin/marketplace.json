@@ -1,0 +1,18 @@
+{
+  "name": "huaiwen-mail-tools",
+  "owner": {
+    "name": "huaiwen"
+  },
+  "plugins": [
+    {
+      "name": "netease-email",
+      "description": "Community NetEase mailbox connector with local setup, mail tools and an agent skill",
+      "homepage": "https://github.com/huaiwen/NetEaseEmailConnector",
+      "category": "productivity",
+      "source": {
+        "type": "local",
+        "path": "./plugins/netease-email"
+      }
+    }
+  ]
+}

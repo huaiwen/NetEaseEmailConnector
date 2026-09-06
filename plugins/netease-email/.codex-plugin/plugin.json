@@ -1,0 +1,27 @@
+{
+  "name": "netease-email",
+  "version": "0.2.0",
+  "description": "Community NetEase mailbox connector with local setup, mail tools and an agent skill",
+  "author": {
+    "name": "huaiwen",
+    "url": "https://github.com/huaiwen"
+  },
+  "homepage": "https://github.com/huaiwen/NetEaseEmailConnector",
+  "repository": "https://github.com/huaiwen/NetEaseEmailConnector",
+  "license": "MIT",
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "NetEase Email (Community)",
+    "shortDescription": "Connect your own NetEase mailbox after local setup.",
+    "longDescription": "Read and search mail, download attachments, and perform authorized sends, drafts, flag changes and moves through a self-hosted connector.",
+    "developerName": "huaiwen",
+    "category": "Productivity",
+    "capabilities": [
+      "Write"
+    ],
+    "defaultPrompt": [
+      "Help me configure my NetEase mailbox and list its folders."
+    ]
+  }
+}
