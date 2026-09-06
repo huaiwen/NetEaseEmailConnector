@@ -1,6 +1,6 @@
 ---
 name: netease-email
-description: Install, configure and use a personal NetEase mailbox through local IMAP/SMTP tools. Search and read mail, download attachments, send authorized messages, save drafts, flag or move messages. Supports 163, 126, yeah and explicitly configured enterprise mailboxes.
+description: Install, configure and use a personal NetEase mailbox through local IMAP/SMTP tools. Search and read mail, download attachments, send authorized messages, save drafts, flag or move messages. Supports 163, 126, yeah, VIP 163/126, 188 and NetEase enterprise mailboxes.
 license: MIT
 ---
 
@@ -14,16 +14,16 @@ If `netease_email` MCP tools are already available, use their schemas. Otherwise
 Use `netease-email-connector --help` to check for an existing installation. If missing, and installation is within the user's request, install the pinned release:
 
 ```sh
-uv tool install 'git+https://github.com/huaiwen/NetEaseEmailConnector.git@v0.2.0'
+uv tool install 'git+https://github.com/huaiwen/NetEaseEmailConnector.git@v0.2.1'
 ```
 
 If the executable is outside PATH, use the executable in `uv tool dir --bin`, or use this equivalent prefix for all commands:
 
 ```sh
-uvx --from 'git+https://github.com/huaiwen/NetEaseEmailConnector.git@v0.2.0' netease-email-connector
+uvx --from 'git+https://github.com/huaiwen/NetEaseEmailConnector.git@v0.2.1' netease-email-connector
 ```
 
-Let the user run `netease-email-connector setup` in their own interactive terminal. It hides authorization-code entry, generates an API token and creates `~/.config/netease-email-connector/.env` with mode 0600. Do not collect credentials in chat, command arguments or logs. For a nonstandard domain obtain the official TLS IMAP/SMTP hosts from the user or their mail administrator. Setup defaults to read-only and refuses to overwrite existing configuration. An existing account needs no new setup. `NETEASE_ENV_FILE` or `--env-file /absolute/path` selects another account explicitly; do not discover or print unrelated .env files.
+If the user config exists, reuse it without reading or printing credentials. Otherwise collect the email and write preference in conversation. Launch `netease-email-connector setup --web --email <address>` as a background process and open its printed loopback URL on the user's computer. Add `--enable-writes` only when requested. Let the user enter the authorization code in the masked local form and save; never inspect password fields or capture their contents. Keep the process alive until it exits after saving, then run doctor. Do not make the user type setup commands when a local browser is available. On headless systems only, let the user run `setup` in their own terminal. Do not forward the configuration page from a remote host. Hosts are preset for 163/126/yeah/VIP 163/VIP 126/188; custom domains default to NetEase enterprise hosts, with optional advanced overrides. Configuration uses `~/.config/netease-email-connector/.env`, mode 0600, read-only by default, and never overwrites an existing file. `NETEASE_ENV_FILE` or `--env-file /absolute/path` selects another account explicitly. Never collect secrets in chat, argv or logs.
 
 Run `netease-email-connector doctor` to verify IMAP login. This does not send a test email or read message bodies. Only run a self-send test if the user explicitly asks for it.
 

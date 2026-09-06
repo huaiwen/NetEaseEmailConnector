@@ -4,6 +4,7 @@ import argparse
 import getpass
 import json
 import os
+import re
 import secrets
 import sys
 import warnings
@@ -12,12 +13,37 @@ from pathlib import Path
 from dotenv import load_dotenv
 from pydantic import ValidationError
 
-from .mail import AttachmentRef, Compose, Draft, Flags, Mailbox, MailError, MessageRef, Move, Search
+from .mail import AttachmentRef, Compose, Draft, Flags, Mailbox, MailError, MessageRef, Move, Search, default_hosts
 
 MODELS = {"list_folders": None, "search_emails": Search, "read_email": MessageRef,
           "download_attachment": AttachmentRef, "send_email": Compose, "save_draft": Draft,
           "set_flags": Flags, "move_email": Move}
 WRITES = {"send_email", "save_draft", "set_flags", "move_email"}
+
+
+class SetupError(ValueError):
+    """Fixed, credential-free messages safe to show during setup."""
+
+
+def setup_values(address, password, writes=False, imap_host="", smtp_host=""):
+    address = address.strip()
+    try:
+        if len(address) > 254:
+            raise ValueError
+        Compose.addresses([address])
+    except ValueError:
+        raise SetupError("邮箱地址格式不正确；请填写完整地址，@ 前面不要加反斜杠。") from None
+    if not password or any(ord(c) < 32 or ord(c) == 127 for c in password):
+        raise SetupError("授权码不能为空，也不能包含换行；请重新隐藏输入。")
+    imap_default, smtp_default = default_hosts(address)
+    hosts = [imap_host.strip() or imap_default, smtp_host.strip() or smtp_default]
+    if any(len(h) > 253 or not all(re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?", label)
+                                 for label in h.split(".")) for h in hosts):
+        raise SetupError("服务器地址只填写主机名，不要包含 https://、端口或路径。")
+    return {"NETEASE_EMAIL": address, "NETEASE_AUTH_CODE": password,
+            "IMAP_HOST": hosts[0], "SMTP_HOST": hosts[1],
+            "CONNECTOR_API_TOKEN": secrets.token_urlsafe(32),
+            "PUBLIC_BASE_URL": "http://127.0.0.1:8000", "MAIL_READ_ONLY": "false" if writes else "true"}
 
 
 def config_path(value=None):
@@ -39,27 +65,26 @@ def save_config(path, values):
             stream.write(f"{key}='{escaped}'\n")
 
 
-def setup(path):
-    if path.exists():
-        raise ValueError("Configuration already exists; edit it locally or select another --env-file")
+def setup(path, address=None, writes=False, imap_host="", smtp_host="", web=False):
+    if path.exists() or path.is_symlink():
+        raise SetupError("配置文件已存在，未覆盖。可直接运行 doctor 检查；更换账号请使用 --env-file 指定新文件。")
+    if web:
+        from .setup_web import serve_setup
+        serve_setup(path, address or "", writes, imap_host, smtp_host)
+        return
     if not sys.stdin.isatty():
-        raise ValueError("Run setup in your own interactive terminal; never pass the authorization code in chat or argv")
-    address = input("邮箱地址 / Email: ").strip()
-    Compose.addresses([address])
+        raise SetupError("请使用 setup --web 打开本机配置页，或在自己的交互式终端运行 setup。")
+    address = address or input("邮箱地址 / Email: ").strip()
+    # Validate before requesting a secret, and show defaults without requiring host entry.
+    defaults = setup_values(address, "validation-only", writes, imap_host, smtp_host)
+    print(f"服务器自动配置：{defaults['IMAP_HOST']}:993 / {defaults['SMTP_HOST']}:465")
     with warnings.catch_warnings():
         warnings.simplefilter("error", getpass.GetPassWarning)
         password = getpass.getpass("客户端授权码（隐藏输入）/ Authorization code: ")
-    values = {"NETEASE_EMAIL": address, "NETEASE_AUTH_CODE": password,
-              "CONNECTOR_API_TOKEN": secrets.token_urlsafe(32),
-              "PUBLIC_BASE_URL": "http://127.0.0.1:8000"}
-    domain = address.rsplit("@", 1)[-1].lower()
-    if domain not in {"163.com", "126.com", "yeah.net"}:
-        values["IMAP_HOST"] = input("官方 IMAP TLS 主机（993）: ").strip()
-        values["SMTP_HOST"] = input("官方 SMTP TLS 主机（465）: ").strip()
-    answer = input("启用发送/修改邮件？Enable writes? [y/N]: ").strip().lower()
+    answer = "y" if writes else input("启用发送/修改邮件？Enable writes? [y/N]: ").strip().lower()
     if answer not in {"", "y", "yes", "n", "no"}:
-        raise ValueError("Answer y or n; no configuration was saved")
-    values["MAIL_READ_ONLY"] = "false" if answer in {"y", "yes"} else "true"
+        raise SetupError("请选择 y 或 n；尚未保存配置。")
+    values = setup_values(address, password, answer in {"y", "yes"}, imap_host, smtp_host)
     save_config(path, values)
     print(f"Configuration saved: {path}\nRun netease-email-connector doctor to test login (no mail sent).")
 
@@ -68,7 +93,12 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--env-file", help="Explicit dotenv path; otherwise NETEASE_ENV_FILE or user config")
     sub = parser.add_subparsers(dest="command", required=True)
-    sub.add_parser("setup", help="Interactive masked credential setup; never overwrites existing config")
+    setup_parser = sub.add_parser("setup", help="Configure default hosts and hidden credentials; never overwrites config")
+    setup_parser.add_argument("--web", action="store_true", help="Open a temporary local configuration page")
+    setup_parser.add_argument("--email", help="Prefill email from the conversation; never pass credentials")
+    setup_parser.add_argument("--enable-writes", action="store_true", help="User has requested sending/modifying mail")
+    setup_parser.add_argument("--imap-host", default="", help="Optional custom TLS host (993)")
+    setup_parser.add_argument("--smtp-host", default="", help="Optional custom TLS host (465)")
     sub.add_parser("doctor", help="Test IMAP login; no sending and no message content")
     sub.add_parser("tools", help="Print CLI input JSON schemas; no credentials required")
     sub.add_parser("mcp-config", help="Print portable stdio MCP config; no secrets")
@@ -84,7 +114,7 @@ def main(argv=None):
     try:
         path = config_path(args.env_file)
         if args.command == "setup":
-            setup(path)
+            setup(path, args.email, args.enable_writes, args.imap_host, args.smtp_host, args.web)
             return
         if args.command == "tools":
             print(json.dumps({name: {"write": name in WRITES, "input": model.model_json_schema()
@@ -126,6 +156,10 @@ def main(argv=None):
             else:
                 import uvicorn
                 uvicorn.run(api, host=args.host, port=args.port, access_log=False)
+    except SetupError as exc:
+        parser.exit(2, f"{exc}\n")
+    except FileExistsError:
+        parser.exit(2, "配置文件已存在，未覆盖；请直接运行 doctor 或选择另一个 --env-file。\n")
     except MailError as exc:
         parser.exit(1, f"{exc}\n")
     except (ValueError, ValidationError, OSError, getpass.GetPassWarning):

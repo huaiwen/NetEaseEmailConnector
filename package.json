@@ -1,6 +1,6 @@
 {
   "name": "netease-email-connector",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Community NetEase mailbox tools for Pi, MCP and agent skills; configure locally once",
   "license": "MIT",
   "author": "huaiwen",

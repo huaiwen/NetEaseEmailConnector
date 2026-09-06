@@ -49,7 +49,7 @@ def create_services(mailbox=None, token=None, public_url=None):
         async with mcp.session_manager.run():
             yield
 
-    api = FastAPI(title="NetEase Email Connector", version="0.2.0", description=INSTRUCTIONS,
+    api = FastAPI(title="NetEase Email Connector", version="0.2.1", description=INSTRUCTIONS,
                   servers=[{"url": public_url}], lifespan=lifespan)
     security = HTTPBearer()
 

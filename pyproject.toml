@@ -1,6 +1,6 @@
 [project]
 name = "netease-email-connector"
-version = "0.2.0"
+version = "0.2.1"
 description = "NetEase IMAP/SMTP tools for GPT Actions, MCP clients and bots"
 readme = "README.md"
 license = "MIT"

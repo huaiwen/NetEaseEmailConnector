@@ -22,6 +22,16 @@ MAX_MESSAGE_BYTES = 20 * 1024 * 1024
 MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024
 MAX_TEXT = 30_000
 
+PERSONAL_DOMAINS = {"163.com", "126.com", "yeah.net", "vip.163.com", "vip.126.com", "188.com"}
+
+
+def default_hosts(address):
+    domain = address.rsplit("@", 1)[-1].lower()
+    if domain in PERSONAL_DOMAINS:
+        return f"imap.{domain}", f"smtp.{domain}"
+    # NetEase enterprise default; regional/custom hosts can still be configured.
+    return "imaphz.qiye.163.com", "smtphz.qiye.163.com"
+
 
 class MailError(Exception):
     """Safe error text suitable for returning to clients."""
@@ -171,10 +181,9 @@ class Mailbox:
         self.address = os.environ.get("NETEASE_EMAIL", "").strip()
         self.password = os.environ.get("NETEASE_AUTH_CODE", "")
         Compose.addresses([self.address])
-        domain = self.address.rsplit("@", 1)[-1].lower()
-        known = domain in {"163.com", "126.com", "yeah.net"}
-        self.imap_host = os.environ.get("IMAP_HOST") or (f"imap.{domain}" if known else "")
-        self.smtp_host = os.environ.get("SMTP_HOST") or (f"smtp.{domain}" if known else "")
+        imap_host, smtp_host = default_hosts(self.address)
+        self.imap_host = os.environ.get("IMAP_HOST") or imap_host
+        self.smtp_host = os.environ.get("SMTP_HOST") or smtp_host
         if not self.password or not self.imap_host or not self.smtp_host:
             raise ValueError("Set NETEASE_EMAIL, NETEASE_AUTH_CODE and mail hosts for nonstandard domains")
         self.imap_port = int(os.environ.get("IMAP_PORT", "993"))
