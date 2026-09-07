@@ -5,7 +5,7 @@ MIT-licensed community plugin by huaiwen, not affiliated with NetEase, OpenAI or
 Install uv, then run:
 
 ```sh
-uvx --from 'git+https://github.com/huaiwen/NetEaseEmailConnector.git@v0.2.1' netease-email-connector setup --web
+uvx --from 'git+https://github.com/huaiwen/NetEaseEmailConnector.git@v0.2.2' netease-email-connector setup --web
 ```
 
 The agent can launch setup and prefill the email from conversation; the user enters the authorization code only in the local browser form. Setup hides credential entry and stores user-owned configuration in `~/.config/netease-email-connector/.env`, mode 0600, outside the plugin cache. It defaults to read-only. The MCP server starts from the same pinned release. Run `doctor` with the same command prefix to test IMAP login without sending mail.

@@ -4,7 +4,7 @@
 
 这是社区项目，与网易、OpenAI、xAI 和 Pi 无隶属关系。适合把自己的网易邮箱接入私人 AI 助手；尚未作为多用户邮件服务发布。
 
-当前版本：[v0.2.1（下载安装包）](https://github.com/huaiwen/NetEaseEmailConnector/releases/tag/v0.2.1)。变更及已验证范围见 [CHANGELOG](CHANGELOG.md)。
+当前版本：[v0.2.2（下载安装包）](https://github.com/huaiwen/NetEaseEmailConnector/releases/tag/v0.2.2)。变更及已验证范围见 [CHANGELOG](CHANGELOG.md)。
 
 | 客户端 | 接入方式 |
 | --- | --- |
@@ -22,7 +22,7 @@
 将下面这段话直接发给 **Codex、Pi、Grok Build 或其他能执行本地命令的 Agent**：
 
 ```text
-请安装 https://github.com/huaiwen/NetEaseEmailConnector 的 v0.2.1。
+请安装 https://github.com/huaiwen/NetEaseEmailConnector 的 v0.2.2。
 先阅读仓库 INSTALL.md，再检查 uv 和 Python 3.11+。
 安装连接器及适合当前客户端的 netease-email Skill 或 MCP 配置；保留已有的其他配置。
 在对话中确认我的邮箱地址和是否启用写入，然后由你启动 setup --web 打开本机配置页。
@@ -37,14 +37,14 @@ Agent 的具体执行步骤见 [INSTALL.md](INSTALL.md)。普通云端聊天无�
 先准备 [uv](https://docs.astral.sh/uv/getting-started/installation/)，它可以管理所需 Python 环境：
 
 ```sh
-uv tool install 'git+https://github.com/huaiwen/NetEaseEmailConnector.git@v0.2.1'
+uv tool install 'git+https://github.com/huaiwen/NetEaseEmailConnector.git@v0.2.2'
 netease-email-connector setup --web
 ```
 
 若命令不在 PATH，运行 `uv tool update-shell` 后重开终端，或使用 `uv tool dir --bin` 中的完整路径。也可以把命令前缀换成：
 
 ```sh
-uvx --from 'git+https://github.com/huaiwen/NetEaseEmailConnector.git@v0.2.1' netease-email-connector setup --web
+uvx --from 'git+https://github.com/huaiwen/NetEaseEmailConnector.git@v0.2.2' netease-email-connector setup --web
 ```
 
 配置页只需填写邮箱、授权码和是否允许写入，服务器自动匹配；高级设置通常不用修改。默认只读，自动生成 API 密钥，保存到 `~/.config/netease-email-connector/.env`（权限 0600）。升级/重新安装不会覆盖此文件。再次运行 setup 会明确提示配置已存在；修改配置请用本机编辑器打开此文件。
@@ -69,21 +69,30 @@ netease-email-connector tools        # 输出 8 个操作的 JSON schema
 netease-email-connector mcp-config   # 输出本机 MCP 配置，不含密钥
 ```
 
+首次配置可在页面的“高级设置”调整容量；已有账号在配置文件中加入以下两项，保存后重启 MCP/HTTP 服务（CLI 下次调用即生效）：
+
+```dotenv
+MAIL_MAX_MESSAGE_MIB=200
+MAIL_MAX_ATTACHMENT_MIB=200
+```
+
+数值必须为正整数，单位 MiB（1 MiB = 1,048,576 字节）；省略时都为 200。前者用于整信读取、发送和草稿，后者用于解码后的单个附件。若要发送 200 MiB 文件，可将整信上限提高到例如 300 MiB，为 MIME 编码预留空间。服务商、反向代理和客户端自己的容量/超时限制仍然适用。大型邮件目前在内存中解析，内存使用可能是原始大小的数倍。
+
 `NETEASE_ENV_FILE` 或全局参数 `--env-file /absolute/path/.env` 可选择其他配置。优先级：已有进程环境变量 > 指定文件；没有指定文件时读取上述用户配置。安装版不会从 Agent 的当前项目自动寻找 `.env`。文件内容不进行 `${...}` 插值，授权码中的特殊字符按字面保留。
 
 ### Pi 一次安装 Skill
 
 ```sh
-pi install npm:netease-email-connector@0.2.1
+pi install npm:netease-email-connector@0.2.2
 ```
 
 重启 Pi，输入 `/skill:netease-email`，或说“帮我配置网易邮箱，列出目录”。Skill 会复用已安装 CLI；若缺少，会指导 Agent 安装。**Skill 路线不需要 pi-mcp-adapter**。需要将 8 个操作常驻为 MCP 工具时，使用下文 Pi MCP 接入。
 
-也可用 `pi install git:github.com/huaiwen/NetEaseEmailConnector@v0.2.1` 安装同一版本。
+也可用 `pi install git:github.com/huaiwen/NetEaseEmailConnector@v0.2.2` 安装同一版本。
 
 ### 只下载 Skill / MCP
 
-- Skill：[下载 ZIP](https://github.com/huaiwen/NetEaseEmailConnector/releases/download/v0.2.1/netease-email-skill.zip) 或查看 [SKILL.md](plugins/netease-email/skills/netease-email/SKILL.md)。将解压后的整个 `netease-email` 目录复制到 `~/.agents/skills/`，Codex、Pi 和 Grok Build 可发现；也可使用各客户端自己的 skills 目录。Skill 是指导文件，实际操作由首次安装的 CLI 执行。
+- Skill：[下载 ZIP](https://github.com/huaiwen/NetEaseEmailConnector/releases/download/v0.2.2/netease-email-skill.zip) 或查看 [SKILL.md](plugins/netease-email/skills/netease-email/SKILL.md)。将解压后的整个 `netease-email` 目录复制到 `~/.agents/skills/`，Codex、Pi 和 Grok Build 可发现；也可使用各客户端自己的 skills 目录。Skill 是指导文件，实际操作由首次安装的 CLI 执行。
 - MCP：[通用配置](examples/mcp.json)。有 uv 即可按固定版本启动，首次启动下载依赖；用户先完成 setup。已有 MCP 配置请仅合并 `netease_email` 条目。
 - 无需运行常驻服务的 Agent 可直接使用 CLI：
 
@@ -127,7 +136,7 @@ grok plugin install netease-email --trust
 先克隆或下载本仓库并进入目录：
 
 ```sh
-git clone --branch v0.2.1 https://github.com/huaiwen/NetEaseEmailConnector.git
+git clone --branch v0.2.2 https://github.com/huaiwen/NetEaseEmailConnector.git
 cd NetEaseEmailConnector
 ```
 
@@ -315,7 +324,7 @@ Pi 模板按官方包文档配置，MCP stdio 传输有真实子进程的离线�
 `v0.1.0` 已在一个网易企业邮箱完成 8 项真实邮件操作检查；ChatGPT/Grok 公网会话与 Pi 模型会话仍需在部署和配置后由各客户端验证。企业邮箱的移动/标记操作后，搜索索引可能短暂滞后，应稍后重新查询，不要重发邮件。
 
 - 单实例固定一个邮箱；没有多用户账号隔离、OAuth 授权中心或管理后台。有多人使用需求时再添加这些功能。
-- 邮件读取/发送上限 20 MiB，单附件 5 MiB，最多 5 个附件。正文最多返回 30,000 字符，并提供截断标记；不自动读取附件内容或渲染 HTML。
+- 整封邮件读取/发送/草稿默认上限 **200 MiB**，单附件上传/下载默认上限 **200 MiB**，最多 5 个附件；均可配置。整信大小按编码后的 MIME 字节数计算，包含附件 Base64、换行和邮件头开销；200 MiB 原始附件编码后会超过 200 MiB，需要相应提高整信上限。正文最多返回 30,000 字符，并提供截断标记；不自动读取附件内容或渲染 HTML。
 - 发送者固定为配置的网易账号。成功仅代表 SMTP 接受；不额外 APPEND 已发送副本，避免与网易服务器的自动存档重复。已发送存档是否开启应在真实邮箱中确认。
 - 草稿每次新建，不覆盖已有草稿；没有定时发信或发送幂等数据库。网络断开后的写操作结果可能不确定，检查后再决定是否重试。
 - 移动优先使用 `UID MOVE`；只有 `UIDPLUS` 时先 COPY 并核验 COPYUID，再只清除原 UID，保留目标副本。多步操作中断时可能留下副本，应核查两边后处理。两种能力都没有时拒绝移动；永远不执行全局 EXPUNGE。没有永久删除或清空垃圾箱接口。

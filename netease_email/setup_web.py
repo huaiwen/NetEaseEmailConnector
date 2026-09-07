@@ -8,6 +8,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qs
 
 from .cli import SetupError, save_config, setup_values
+from .mail import size_limit, MIB
 
 
 def setup_server(path, address="", writes=False, imap_host="", smtp_host=""):
@@ -60,7 +61,10 @@ p,small{{line-height:1.6;color:#536278}}summary{{cursor:pointer;margin-top:20px}
 <details><summary>高级设置（通常无需修改）</summary>
 <small>仅在管理员提供了不同服务器时填写。留空自动匹配，TLS 端口为 993 / 465。</small>
 <label for="imap">IMAP 主机</label><input id="imap" name="imap_host" value="{escape(imap_host)}" placeholder="自动匹配">
-<label for="smtp">SMTP 主机</label><input id="smtp" name="smtp_host" value="{escape(smtp_host)}" placeholder="自动匹配"></details>
+<label for="smtp">SMTP 主机</label><input id="smtp" name="smtp_host" value="{escape(smtp_host)}" placeholder="自动匹配">
+<label for="message-mib">整封邮件上限（MiB）</label><input id="message-mib" name="message_mib" type="number" min="1" step="1" value="200" required>
+<label for="attachment-mib">单附件上限（MiB）</label><input id="attachment-mib" name="attachment_mib" type="number" min="1" step="1" value="200" required>
+<small>整信大小包含附件编码开销，通常比原始文件大约三分之一。邮箱服务商和客户端自身的限制仍适用。</small></details>
 <button type="submit">保存配置</button></form><p>此页面只在你的电脑上运行，保存后自动关闭配置服务，10 分钟未操作则过期。</p></html>''')
 
         def do_POST(self):
@@ -73,7 +77,7 @@ p,small{{line-height:1.6;color:#536278}}summary{{cursor:pointer;margin-top:20px}
                 if not 0 < length <= 32768:
                     raise ValueError
                 fields = parse_qs(self.rfile.read(length).decode("utf-8"), keep_blank_values=True, max_num_fields=8)
-                allowed = {"csrf", "email", "password", "writes", "imap_host", "smtp_host"}
+                allowed = {"csrf", "email", "password", "writes", "imap_host", "smtp_host", "message_mib", "attachment_mib"}
                 if set(fields) - allowed or any(len(v) != 1 for v in fields.values()):
                     raise ValueError
                 data = {k: v[0] for k, v in fields.items()}
@@ -83,6 +87,8 @@ p,small{{line-height:1.6;color:#536278}}summary{{cursor:pointer;margin-top:20px}
                     raise ValueError
                 values = setup_values(data.get("email", ""), data.get("password", ""),
                                       data.get("writes") == "yes", data.get("imap_host", ""), data.get("smtp_host", ""))
+                for kind in ("MESSAGE", "ATTACHMENT"):
+                    values[f"MAIL_MAX_{kind}_MIB"] = str(size_limit(kind, data.get(f"{kind.lower()}_mib", "200")) // MIB)
                 save_config(path, values)
             except SetupError as exc:
                 self.reply(400, html.escape(str(exc)) + f'<p><a href="{route}">返回重新填写</a></p>')

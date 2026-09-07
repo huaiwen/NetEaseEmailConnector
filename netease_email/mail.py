@@ -18,9 +18,21 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-MAX_MESSAGE_BYTES = 20 * 1024 * 1024
-MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024
+MIB = 1024 * 1024
 MAX_TEXT = 30_000
+
+
+def size_limit(kind, value=None):
+    """Resolve after dotenv loading, including model validation in CLI/HTTP/MCP."""
+    name = f"MAIL_MAX_{kind}_MIB"
+    value = os.environ.get(name, "200") if value is None else value
+    try:
+        amount = int(value)
+    except (ValueError, TypeError):
+        raise ValueError(f"{name} must be a positive integer in MiB") from None
+    if amount < 1:
+        raise ValueError(f"{name} must be a positive integer in MiB")
+    return amount * MIB
 
 PERSONAL_DOMAINS = {"163.com", "126.com", "yeah.net", "vip.163.com", "vip.126.com", "188.com"}
 
@@ -83,7 +95,7 @@ class Move(MessageRef):
 
 class Attachment(Input):
     filename: str = Field(min_length=1, max_length=255)
-    content_base64: str = Field(max_length=4 * ((MAX_ATTACHMENT_BYTES + 2) // 3))
+    content_base64: str = Field(description="Base64 attachment; decoded size limited by MAIL_MAX_ATTACHMENT_MIB (default 200 MiB)")
     content_type: str = "application/octet-stream"
 
     @field_validator("filename")
@@ -104,12 +116,15 @@ class Attachment(Input):
     @field_validator("content_base64")
     @classmethod
     def valid_bytes(cls, value):
+        limit = size_limit("ATTACHMENT")
+        if len(value) > 4 * ((limit + 2) // 3):
+            raise ValueError(f"Attachment exceeds MAIL_MAX_ATTACHMENT_MIB ({limit // MIB} MiB)")
         try:
             raw = base64.b64decode(value, validate=True)
         except (ValueError, binascii.Error):
             raise ValueError("Invalid base64") from None
-        if len(raw) > MAX_ATTACHMENT_BYTES:
-            raise ValueError("Attachment exceeds 5 MiB")
+        if len(raw) > limit:
+            raise ValueError(f"Attachment exceeds MAIL_MAX_ATTACHMENT_MIB ({limit // MIB} MiB)")
         return value
 
 
@@ -121,11 +136,19 @@ class Compose(Input):
     cc: list[Address] = Field(default_factory=list, max_length=50)
     bcc: list[Address] = Field(default_factory=list, max_length=50)
     subject: str = Field(max_length=998)
-    text: str = Field(max_length=100_000)
-    html: str | None = Field(default=None, max_length=100_000)
+    text: str
+    html: str | None = None
     attachments: list[Attachment] = Field(default_factory=list, max_length=5)
     in_reply_to: str | None = Field(default=None, max_length=998)
     _subject = field_validator("subject")(one_line)
+
+    @field_validator("text", "html")
+    @classmethod
+    def body_size(cls, value):
+        limit = size_limit("MESSAGE")
+        if value is not None and len(value.encode("utf-8")) > limit:
+            raise ValueError(f"Body exceeds MAIL_MAX_MESSAGE_MIB ({limit // MIB} MiB)")
+        return value
 
     @field_validator("to", "cc", "bcc")
     @classmethod
@@ -178,6 +201,8 @@ def checked(result, operation: str):
 
 class Mailbox:
     def __init__(self):
+        size_limit("MESSAGE")
+        size_limit("ATTACHMENT")
         self.address = os.environ.get("NETEASE_EMAIL", "").strip()
         self.password = os.environ.get("NETEASE_AUTH_CODE", "")
         Compose.addresses([self.address])
@@ -267,15 +292,16 @@ class Mailbox:
             raise MailError("Message not found; search again")
         message, meta, size = found
         if full:
-            if size > MAX_MESSAGE_BYTES:
-                raise MailError("Message exceeds the 20 MiB read limit")
+            limit = size_limit("MESSAGE")
+            if size > limit:
+                raise MailError(f"Message exceeds MAIL_MAX_MESSAGE_MIB ({limit // MIB} MiB)")
             data = checked(client.uid("FETCH", str(uid), "(UID BODY.PEEK[])"), "FETCH")
             pair = next((item for item in data if isinstance(item, tuple)), None)
             if pair is None:
                 raise MailError("Message disappeared; search again")
             raw = pair[1]
-            if len(raw) > MAX_MESSAGE_BYTES:
-                raise MailError("Message exceeds the 20 MiB read limit")
+            if len(raw) > limit:
+                raise MailError(f"Message exceeds MAIL_MAX_MESSAGE_MIB ({limit // MIB} MiB)")
             message = BytesParser(policy=policy.default).parsebytes(raw)
         return message, meta, size
 
@@ -356,11 +382,18 @@ class Mailbox:
             raw = part.get_payload(decode=True)
             if raw is None:
                 raise MailError("Multipart attachments are not supported")
-            if len(raw) > MAX_ATTACHMENT_BYTES:
-                raise MailError("Attachment exceeds 5 MiB")
+            limit = size_limit("ATTACHMENT")
+            if len(raw) > limit:
+                raise MailError(f"Attachment exceeds MAIL_MAX_ATTACHMENT_MIB ({limit // MIB} MiB)")
             return {"filename": part.get_filename(), "content_type": part.get_content_type(), "content_base64": base64.b64encode(raw).decode()}
 
     def compose(self, request: Compose, draft=False):
+        limit = size_limit("MESSAGE")
+        # Reject impossible totals before allocating the MIME representation.
+        decoded_size = sum(len(p.content_base64) // 4 * 3 - p.content_base64[-2:].count("=")
+                           for p in request.attachments)
+        if decoded_size + len(request.text.encode("utf-8")) + len((request.html or "").encode("utf-8")) > limit:
+            raise MailError(f"Composed message exceeds MAIL_MAX_MESSAGE_MIB ({limit // MIB} MiB)")
         message = EmailMessage(policy=policy.SMTP)
         message["From"] = self.address
         message["To"] = ", ".join(request.to)
@@ -380,8 +413,8 @@ class Mailbox:
         for part in request.attachments:
             maintype, subtype = part.content_type.split("/")
             message.add_attachment(base64.b64decode(part.content_base64), maintype=maintype, subtype=subtype, filename=part.filename)
-        if len(message.as_bytes()) > MAX_MESSAGE_BYTES:
-            raise MailError("Composed message exceeds 20 MiB")
+        if len(message.as_bytes()) > limit:
+            raise MailError(f"Composed MIME message exceeds MAIL_MAX_MESSAGE_MIB ({limit // MIB} MiB); attachment encoding adds overhead")
         return message
 
     def send_email(self, request: Compose):

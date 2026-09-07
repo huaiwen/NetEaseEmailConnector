@@ -13,7 +13,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from pydantic import ValidationError
 
-from .mail import AttachmentRef, Compose, Draft, Flags, Mailbox, MailError, MessageRef, Move, Search, default_hosts
+from .mail import AttachmentRef, Compose, Draft, Flags, Mailbox, MailError, MessageRef, Move, Search, default_hosts, size_limit
 
 MODELS = {"list_folders": None, "search_emails": Search, "read_email": MessageRef,
           "download_attachment": AttachmentRef, "send_email": Compose, "save_draft": Draft,
@@ -137,9 +137,11 @@ def main(argv=None):
         elif args.command == "call":
             if args.tool in WRITES and not args.confirm_write:
                 raise ValueError("Write requires --confirm-write after user authorization")
-            raw = sys.stdin.read(30 * 1024 * 1024 + 1)
-            if len(raw) > 30 * 1024 * 1024:
-                raise ValueError("Input too large")
+            # JSON escaping can expand one UTF-8 byte to six ASCII characters.
+            input_limit = 6 * size_limit("MESSAGE") + 1024 * 1024
+            raw = sys.stdin.read(input_limit + 1)
+            if len(raw) > input_limit:
+                raise MailError("JSON input exceeds the budget derived from MAIL_MAX_MESSAGE_MIB")
             data = json.loads(raw or "{}")
             model = MODELS[args.tool]
             if not model and data != {}:

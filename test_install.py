@@ -61,13 +61,15 @@ class InstallCheck(unittest.TestCase):
                     self.assertEqual(status, 200)
                     self.assertIn('type="password"', page)
                     self.assertEqual(request("GET", headers={"Host": "attacker.example"})[0], 404)
-                    data = {"csrf": route[1:], "email": "fake@126.com", "password": "fake\\code'@${LITERAL}"}
+                    data = {"csrf": route[1:], "email": "fake@126.com", "password": "fake\\code'@${LITERAL}",
+                            "message_mib": "300", "attachment_mib": "200"}
                     headers = {"Content-Type": "application/x-www-form-urlencoded", "Origin": server.origin}
                     self.assertEqual(request("POST", urlencode(data), {**headers, "Origin": "https://attacker.example"})[0], 403)
                     self.assertEqual(request("POST", urlencode({**data, "csrf": "wrong"}), headers)[0], 400)
                     self.assertEqual(request("POST", urlencode({**data, "csrf": "错误"}), headers)[0], 400)
                     self.assertFalse(web_path.exists())
                     self.assertEqual(request("POST", urlencode({**data, "password": ""}), headers)[0], 400)
+                    self.assertEqual(request("POST", urlencode({**data, "message_mib": "0"}), headers)[0], 400)
                     status, response = request("POST", urlencode(data), headers)
                     self.assertEqual(status, 200)
                     self.assertNotIn(data["password"], response)
@@ -75,6 +77,8 @@ class InstallCheck(unittest.TestCase):
                     self.assertEqual(values["NETEASE_AUTH_CODE"], data["password"])
                     self.assertEqual(values["MAIL_READ_ONLY"], "true")
                     self.assertEqual(values["SMTP_HOST"], "smtp.126.com")
+                    self.assertEqual(values["MAIL_MAX_MESSAGE_MIB"], "300")
+                    self.assertEqual(values["MAIL_MAX_ATTACHMENT_MIB"], "200")
                     self.assertEqual(web_path.stat().st_mode & 0o777, 0o600)
                     self.assertEqual(request("POST", urlencode(data), headers)[0], 409)
                 finally:

@@ -3,6 +3,7 @@
 import asyncio
 import base64
 import json
+import io
 import os
 import smtplib
 import sys
@@ -10,6 +11,8 @@ import unittest
 from email.message import EmailMessage
 from pathlib import Path
 from unittest.mock import patch
+from unittest.mock import MagicMock
+from contextlib import redirect_stdout
 
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
@@ -17,7 +20,8 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
 from netease_email.mail import (Attachment, AttachmentRef, Compose, Draft, Flags, Mailbox, MailError,
-                  MessageRef, Move, Search, decode_folder, encode_folder)
+                  MessageRef, Move, Search, decode_folder, encode_folder, size_limit, MIB)
+from netease_email.cli import main
 from netease_email.server import create_services
 
 ENV = {"NETEASE_EMAIL": "test@163.com", "NETEASE_AUTH_CODE": "fake-authorization-code",
@@ -109,6 +113,75 @@ class FakeSMTP:
 
 
 class ConnectorCheck(unittest.TestCase):
+    def test_configurable_size_limits(self):
+        with patch.dict(os.environ, ENV, clear=True):
+            self.assertEqual(size_limit("MESSAGE"), 200 * MIB)
+            self.assertEqual(size_limit("ATTACHMENT"), 200 * MIB)
+            box = Mailbox()
+            # Exceed both old limits using actual payloads, without a real mail server.
+            attachment = Attachment(filename="large.bin", content_base64=base64.b64encode(b"a" * (6 * MIB)).decode())
+            request = Compose(to=["test@example.com"], subject="offline", text=("x" * 70 + "\n") * (21 * MIB // 71), attachments=[attachment])
+            self.assertTrue(box.compose(request).is_multipart())
+            del request, attachment
+            with patch("netease_email.cli.load_dotenv"), patch("netease_email.cli.Mailbox") as cli_box, patch("sys.stdin", io.StringIO(" " * (31 * MIB) + "{}")), redirect_stdout(io.StringIO()):
+                cli_box.return_value.list_folders.return_value = {"folders": []}
+                main(["call", "list_folders"])
+                cli_box.return_value.list_folders.assert_called_once()
+
+            # Change config after importing models: dotenv overrides must take effect.
+            os.environ.update(MAIL_MAX_MESSAGE_MIB="1", MAIL_MAX_ATTACHMENT_MIB="1")
+            for invalid in ("0", "-1", "1.5", "bad", ""):
+                with patch.dict(os.environ, {"MAIL_MAX_MESSAGE_MIB": invalid}), self.assertRaises(ValueError):
+                    Mailbox()
+            exact = base64.b64encode(b"a" * MIB).decode()
+            self.assertEqual(Attachment(filename="exact", content_base64=exact).content_base64, exact)
+            for count in (MIB + 1, MIB + 3):
+                with self.assertRaises(ValidationError):
+                    Attachment(filename="too-large", content_base64=base64.b64encode(b"a" * count).decode())
+            with self.assertRaises(ValidationError):
+                Compose(to=["test@example.com"], subject="", text="中" * (MIB // 3 + 1))
+
+            client = MagicMock()
+            with patch.object(box, "fetch_headers", return_value={42: (MESSAGE, b"", MIB + 1)}):
+                with self.assertRaisesRegex(MailError, "MAIL_MAX_MESSAGE_MIB"):
+                    box.fetch(client, 42, full=True)
+                client.uid.assert_not_called()
+            with patch.object(box, "fetch_headers", return_value={42: (MESSAGE, b"", MIB)}):
+                raw = b"Subject: boundary\r\n\r\n"
+                raw += b"x" * (MIB - len(raw))
+                client.uid.return_value = ("OK", [(b"", raw)])
+                box.fetch(client, 42, full=True)
+                client.uid.return_value = ("OK", [(b"", raw + b"x")])
+                with self.assertRaises(MailError):
+                    box.fetch(client, 42, full=True)
+
+            msg = EmailMessage()
+            msg.set_content("offline")
+            msg.add_attachment(b"a" * MIB, maintype="application", subtype="octet-stream", filename="exact")
+            with patch.object(box, "connect"), patch.object(box, "fetch", return_value=(msg, b"", 0)):
+                self.assertEqual(box.download_attachment(AttachmentRef(**REF, attachment_id=0))["content_base64"], exact)
+                part = next(msg.iter_attachments())
+                part.set_payload(base64.b64encode(b"a" * (MIB + 1)).decode())
+                with self.assertRaisesRegex(MailError, "MAIL_MAX_ATTACHMENT_MIB"):
+                    box.download_attachment(AttachmentRef(**REF, attachment_id=0))
+
+            # A file can fit the attachment cap but exceed the whole MIME cap after encoding.
+            payload = {"to": ["test@example.com"], "subject": "offline", "text": "", "attachments": [
+                {"filename": "exact", "content_base64": exact}]}
+            with patch("netease_email.mail.smtplib.SMTP_SSL") as smtp, patch.object(box, "connect") as imap:
+                with self.assertRaisesRegex(MailError, "MIME"):
+                    box.send_email(Compose(**payload))
+                with self.assertRaisesRegex(MailError, "MIME"):
+                    box.save_draft(Draft(**payload, folder="Drafts"))
+                smtp.assert_not_called()
+                imap.assert_not_called()
+            api, _ = create_services(box, token=TOKEN, public_url="http://localhost")
+            with TestClient(api, base_url="http://localhost") as http:
+                result = http.post("/api/send_email", headers={"Authorization": f"Bearer {TOKEN}"}, json=payload)
+                self.assertEqual(result.status_code, 502)
+                payload["attachments"][0]["content_base64"] = base64.b64encode(b"a" * (MIB + 1)).decode()
+                self.assertEqual(http.post("/api/send_email", headers={"Authorization": f"Bearer {TOKEN}"}, json=payload).status_code, 422)
+
     def test_stdio_and_pi_templates(self):
         root = Path(__file__).resolve().parent
         for filename in ("pi-stdio.json", "pi-http.json"):
