@@ -14,18 +14,20 @@ If `netease_email` MCP tools are already available, use their schemas. Otherwise
 Use `netease-email-connector --help` to check for an existing installation. If missing, and installation is within the user's request, install the pinned release:
 
 ```sh
-uv tool install 'git+https://github.com/huaiwen/NetEaseEmailConnector.git@v0.2.2'
+uv tool install 'git+https://github.com/huaiwen/NetEaseEmailConnector.git@v0.2.3'
 ```
 
 If the executable is outside PATH, use the executable in `uv tool dir --bin`, or use this equivalent prefix for all commands:
 
 ```sh
-uvx --from 'git+https://github.com/huaiwen/NetEaseEmailConnector.git@v0.2.2' netease-email-connector
+uvx --from 'git+https://github.com/huaiwen/NetEaseEmailConnector.git@v0.2.3' netease-email-connector
 ```
 
-If the user config exists, reuse it without reading or printing credentials. Otherwise collect the email and write preference in conversation. Launch `netease-email-connector setup --web --email <address>` as a background process and open its printed loopback URL on the user's computer. Add `--enable-writes` only when requested. Let the user enter the authorization code in the masked local form and save; never inspect password fields or capture their contents. Keep the process alive until it exits after saving, then run doctor. Do not make the user type setup commands when a local browser is available. On headless systems only, let the user run `setup` in their own terminal. Do not forward the configuration page from a remote host. Hosts are preset for 163/126/yeah/VIP 163/VIP 126/188; custom domains default to NetEase enterprise hosts, with optional advanced overrides. Configuration uses `~/.config/netease-email-connector/.env`, mode 0600, read-only by default, and never overwrites an existing file. `NETEASE_ENV_FILE` or `--env-file /absolute/path` selects another account explicitly. Never collect secrets in chat, argv or logs.
+If the user config exists, reuse it without reading or printing credentials. Otherwise collect the email and write preference in conversation. Launch `netease-email-connector setup --web --email <address>` as a background process and open its printed loopback URL on the user's computer. Add `--enable-writes` only when requested. Let the user enter the authorization code in the masked local form and save; never inspect password fields or capture their contents. Keep the process alive until it exits after saving, setup verifies IMAP/SMTP before saving; failures leave no config. Then run doctor. Do not make the user type setup commands when a local browser is available. On headless systems only, let the user run `setup` in their own terminal. Do not forward the configuration page from a remote host. Hosts are preset for 163/126/yeah/VIP 163/VIP 126/188; custom domains default to NetEase enterprise hosts, with optional advanced overrides. Configuration uses `~/.config/netease-email-connector/.env`, mode 0600, read-only by default, and never overwrites an existing file. `NETEASE_ENV_FILE` or `--env-file /absolute/path` selects another account explicitly. Never collect secrets in chat, argv or logs.
 
-Run `netease-email-connector doctor` to verify IMAP login. This does not send a test email or read message bodies. Only run a self-send test if the user explicitly asks for it.
+Run `netease-email-connector doctor` to verify IMAP/SMTP TLS, login and read-only INBOX access. This does not send a test email or read message bodies. Only run a self-send test if the user explicitly asks for it.
+
+For DNS failures abroad, the connector automatically tries Google/Cloudflare DoH after local connection failure; only server hostnames are queried. If needed, use https://www.whatsmydns.net/ to look up A/AAAA records for the configured IMAP/SMTP hosts and enter public IPs in the setup form's advanced connection-IP fields (CLI: `--imap-ip` / `--smtp-ip`; existing config: `IMAP_CONNECT_IP` / `SMTP_CONNECT_IP`). Preserve the official hostnames for TLS SNI/certificate validation. Never disable certificate checks or change system DNS/hosts. Re-run doctor after changes; failure is not a working configuration. `MAIL_DNS_FALLBACK=false` disables public DNS queries. Do not retry failed writes automatically.
 
 ## Use
 

@@ -7,11 +7,11 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qs
 
-from .cli import SetupError, save_config, setup_values
+from .cli import SetupError, finish_setup, setup_values
 from .mail import size_limit, MIB
 
 
-def setup_server(path, address="", writes=False, imap_host="", smtp_host=""):
+def setup_server(path, address="", writes=False, imap_host="", smtp_host="", imap_ip="", smtp_ip=""):
     route = "/" + secrets.token_urlsafe(32)
 
     class Handler(BaseHTTPRequestHandler):
@@ -62,10 +62,13 @@ p,small{{line-height:1.6;color:#536278}}summary{{cursor:pointer;margin-top:20px}
 <small>仅在管理员提供了不同服务器时填写。留空自动匹配，TLS 端口为 993 / 465。</small>
 <label for="imap">IMAP 主机</label><input id="imap" name="imap_host" value="{escape(imap_host)}" placeholder="自动匹配">
 <label for="smtp">SMTP 主机</label><input id="smtp" name="smtp_host" value="{escape(smtp_host)}" placeholder="自动匹配">
+<small>海外 DNS 异常时会自动尝试公共 DNS。也可在 <a href="https://www.whatsmydns.net/" target="_blank" rel="noreferrer">whatsmydns.net</a> 查询上方主机的 A/AAAA 记录，填写连接 IP；不要把主机名改成 IP。</small>
+<label for="imap-ip">IMAP 连接 IP（可留空）</label><input id="imap-ip" name="imap_ip" value="{escape(imap_ip)}" placeholder="自动解析">
+<label for="smtp-ip">SMTP 连接 IP（可留空）</label><input id="smtp-ip" name="smtp_ip" value="{escape(smtp_ip)}" placeholder="自动解析">
 <label for="message-mib">整封邮件上限（MiB）</label><input id="message-mib" name="message_mib" type="number" min="1" step="1" value="200" required>
 <label for="attachment-mib">单附件上限（MiB）</label><input id="attachment-mib" name="attachment_mib" type="number" min="1" step="1" value="200" required>
 <small>整信大小包含附件编码开销，通常比原始文件大约三分之一。邮箱服务商和客户端自身的限制仍适用。</small></details>
-<button type="submit">保存配置</button></form><p>此页面只在你的电脑上运行，保存后自动关闭配置服务，10 分钟未操作则过期。</p></html>''')
+<button type="submit">测试连接并保存</button></form><p>先检查 IMAP/SMTP 的 DNS、TLS 和登录，通过后才保存；可能需要约一分钟，不会发送邮件。备用 DNS 只查询服务器名，不接收账号或授权码。此页面只在你的电脑上运行，保存后自动关闭，10 分钟未操作则过期。</p></html>''')
 
         def do_POST(self):
             if (not self.valid_target() or self.headers.get("Origin") != self.server.origin
@@ -76,8 +79,8 @@ p,small{{line-height:1.6;color:#536278}}summary{{cursor:pointer;margin-top:20px}
                 length = int(self.headers.get("Content-Length", "0"))
                 if not 0 < length <= 32768:
                     raise ValueError
-                fields = parse_qs(self.rfile.read(length).decode("utf-8"), keep_blank_values=True, max_num_fields=8)
-                allowed = {"csrf", "email", "password", "writes", "imap_host", "smtp_host", "message_mib", "attachment_mib"}
+                fields = parse_qs(self.rfile.read(length).decode("utf-8"), keep_blank_values=True, max_num_fields=10)
+                allowed = {"csrf", "email", "password", "writes", "imap_host", "smtp_host", "message_mib", "attachment_mib", "imap_ip", "smtp_ip"}
                 if set(fields) - allowed or any(len(v) != 1 for v in fields.values()):
                     raise ValueError
                 data = {k: v[0] for k, v in fields.items()}
@@ -86,10 +89,11 @@ p,small{{line-height:1.6;color:#536278}}summary{{cursor:pointer;margin-top:20px}
                 if data.get("writes", "") not in {"", "yes"}:
                     raise ValueError
                 values = setup_values(data.get("email", ""), data.get("password", ""),
-                                      data.get("writes") == "yes", data.get("imap_host", ""), data.get("smtp_host", ""))
+                                      data.get("writes") == "yes", data.get("imap_host", ""), data.get("smtp_host", ""),
+                                      data.get("imap_ip", ""), data.get("smtp_ip", ""))
                 for kind in ("MESSAGE", "ATTACHMENT"):
                     values[f"MAIL_MAX_{kind}_MIB"] = str(size_limit(kind, data.get(f"{kind.lower()}_mib", "200")) // MIB)
-                save_config(path, values)
+                finish_setup(path, values)
             except SetupError as exc:
                 self.reply(400, html.escape(str(exc)) + f'<p><a href="{route}">返回重新填写</a></p>')
                 return
@@ -100,7 +104,7 @@ p,small{{line-height:1.6;color:#536278}}summary{{cursor:pointer;margin-top:20px}
                 self.reply(400, "无法保存配置。请检查输入和本机文件权限，返回后重试。")
                 return
             self.server.configured = True
-            self.reply(200, '<meta charset="utf-8"><h1>配置已保存</h1><p>可以关闭此页面，回到对话让助手检查连接。尚未发送或修改邮件。</p>')
+            self.reply(200, '<meta charset="utf-8"><h1>配置已保存</h1><p>IMAP/SMTP 连接和登录检查通过，可以关闭此页面并回到对话使用。未发送或修改邮件。</p>')
 
     server = HTTPServer(("127.0.0.1", 0), Handler)
     server.server_name_expected = f"127.0.0.1:{server.server_port}"
@@ -111,8 +115,8 @@ p,small{{line-height:1.6;color:#536278}}summary{{cursor:pointer;margin-top:20px}
     return server
 
 
-def serve_setup(path, address="", writes=False, imap_host="", smtp_host=""):
-    with setup_server(path, address, writes, imap_host, smtp_host) as server:
+def serve_setup(path, address="", writes=False, imap_host="", smtp_host="", imap_ip="", smtp_ip=""):
+    with setup_server(path, address, writes, imap_host, smtp_host, imap_ip, smtp_ip) as server:
         print(f"在本机浏览器打开配置页（10 分钟内有效）：{server.setup_url}", flush=True)
         webbrowser.open(server.setup_url)
         deadline = time.monotonic() + 600
@@ -120,4 +124,4 @@ def serve_setup(path, address="", writes=False, imap_host="", smtp_host=""):
             server.handle_request()
         if not server.configured:
             raise SetupError("配置页已过期，尚未保存。请重新运行 setup --web。")
-    print(f"Configuration saved: {path}\nRun netease-email-connector doctor to test login (no mail sent).")
+    print(f"IMAP/SMTP checks passed. Configuration saved: {path}")

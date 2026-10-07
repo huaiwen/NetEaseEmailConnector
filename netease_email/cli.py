@@ -13,6 +13,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from pydantic import ValidationError
 
+from .network import public_ip
 from .mail import AttachmentRef, Compose, Draft, Flags, Mailbox, MailError, MessageRef, Move, Search, default_hosts, size_limit
 
 MODELS = {"list_folders": None, "search_emails": Search, "read_email": MessageRef,
@@ -25,7 +26,7 @@ class SetupError(ValueError):
     """Fixed, credential-free messages safe to show during setup."""
 
 
-def setup_values(address, password, writes=False, imap_host="", smtp_host=""):
+def setup_values(address, password, writes=False, imap_host="", smtp_host="", imap_ip="", smtp_ip=""):
     address = address.strip()
     try:
         if len(address) > 254:
@@ -40,10 +41,17 @@ def setup_values(address, password, writes=False, imap_host="", smtp_host=""):
     if any(len(h) > 253 or not all(re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?", label)
                                  for label in h.split(".")) for h in hosts):
         raise SetupError("服务器地址只填写主机名，不要包含 https://、端口或路径。")
-    return {"NETEASE_EMAIL": address, "NETEASE_AUTH_CODE": password,
+    values = {"NETEASE_EMAIL": address, "NETEASE_AUTH_CODE": password,
             "IMAP_HOST": hosts[0], "SMTP_HOST": hosts[1],
             "CONNECTOR_API_TOKEN": secrets.token_urlsafe(32),
             "PUBLIC_BASE_URL": "http://127.0.0.1:8000", "MAIL_READ_ONLY": "false" if writes else "true"}
+    try:
+        for name, value in (("IMAP_CONNECT_IP", imap_ip), ("SMTP_CONNECT_IP", smtp_ip)):
+            if value.strip():
+                values[name] = public_ip(value.strip())
+    except ValueError:
+        raise SetupError("连接 IP 必须是公网 IPv4 或 IPv6 地址；主机名仍填写官方服务器名。") from None
+    return values
 
 
 def config_path(value=None):
@@ -65,18 +73,28 @@ def save_config(path, values):
             stream.write(f"{key}='{escaped}'\n")
 
 
-def setup(path, address=None, writes=False, imap_host="", smtp_host="", web=False):
+def finish_setup(path, values):
+    if path.exists() or path.is_symlink():
+        raise FileExistsError
+    try:
+        Mailbox(values).check_connection()
+    except MailError as exc:
+        raise SetupError("连接检查未通过，尚未保存配置。" + str(exc)) from None
+    save_config(path, values)
+
+
+def setup(path, address=None, writes=False, imap_host="", smtp_host="", web=False, imap_ip="", smtp_ip=""):
     if path.exists() or path.is_symlink():
         raise SetupError("配置文件已存在，未覆盖。可直接运行 doctor 检查；更换账号请使用 --env-file 指定新文件。")
     if web:
         from .setup_web import serve_setup
-        serve_setup(path, address or "", writes, imap_host, smtp_host)
+        serve_setup(path, address or "", writes, imap_host, smtp_host, imap_ip, smtp_ip)
         return
     if not sys.stdin.isatty():
         raise SetupError("请使用 setup --web 打开本机配置页，或在自己的交互式终端运行 setup。")
     address = address or input("邮箱地址 / Email: ").strip()
     # Validate before requesting a secret, and show defaults without requiring host entry.
-    defaults = setup_values(address, "validation-only", writes, imap_host, smtp_host)
+    defaults = setup_values(address, "validation-only", writes, imap_host, smtp_host, imap_ip, smtp_ip)
     print(f"服务器自动配置：{defaults['IMAP_HOST']}:993 / {defaults['SMTP_HOST']}:465")
     with warnings.catch_warnings():
         warnings.simplefilter("error", getpass.GetPassWarning)
@@ -84,9 +102,10 @@ def setup(path, address=None, writes=False, imap_host="", smtp_host="", web=Fals
     answer = "y" if writes else input("启用发送/修改邮件？Enable writes? [y/N]: ").strip().lower()
     if answer not in {"", "y", "yes", "n", "no"}:
         raise SetupError("请选择 y 或 n；尚未保存配置。")
-    values = setup_values(address, password, answer in {"y", "yes"}, imap_host, smtp_host)
-    save_config(path, values)
-    print(f"Configuration saved: {path}\nRun netease-email-connector doctor to test login (no mail sent).")
+    values = setup_values(address, password, answer in {"y", "yes"}, imap_host, smtp_host, imap_ip, smtp_ip)
+    print("正在检查 IMAP/SMTP 连接和登录；不会发送邮件。", flush=True)
+    finish_setup(path, values)
+    print(f"IMAP/SMTP checks passed. Configuration saved: {path}")
 
 
 def main(argv=None):
@@ -99,7 +118,9 @@ def main(argv=None):
     setup_parser.add_argument("--enable-writes", action="store_true", help="User has requested sending/modifying mail")
     setup_parser.add_argument("--imap-host", default="", help="Optional custom TLS host (993)")
     setup_parser.add_argument("--smtp-host", default="", help="Optional custom TLS host (465)")
-    sub.add_parser("doctor", help="Test IMAP login; no sending and no message content")
+    setup_parser.add_argument("--imap-ip", default="", help="Optional public connection IP; TLS still verifies IMAP host")
+    setup_parser.add_argument("--smtp-ip", default="", help="Optional public connection IP; TLS still verifies SMTP host")
+    sub.add_parser("doctor", help="Test IMAP/SMTP TLS and login; no sending or message content")
     sub.add_parser("tools", help="Print CLI input JSON schemas; no credentials required")
     sub.add_parser("mcp-config", help="Print portable stdio MCP config; no secrets")
     call = sub.add_parser("call", help="Execute a tool; JSON arguments are read from stdin")
@@ -114,7 +135,7 @@ def main(argv=None):
     try:
         path = config_path(args.env_file)
         if args.command == "setup":
-            setup(path, args.email, args.enable_writes, args.imap_host, args.smtp_host, args.web)
+            setup(path, args.email, args.enable_writes, args.imap_host, args.smtp_host, args.web, args.imap_ip, args.smtp_ip)
             return
         if args.command == "tools":
             print(json.dumps({name: {"write": name in WRITES, "input": model.model_json_schema()
@@ -131,9 +152,7 @@ def main(argv=None):
         load_dotenv(path, override=False, interpolate=False)
         mailbox = Mailbox()
         if args.command == "doctor":
-            result = mailbox.list_folders()
-            print(json.dumps({"ok": True, "read_only": mailbox.read_only,
-                              "folder_count": len(result["folders"])}))
+            print(json.dumps(mailbox.check_connection()))
         elif args.command == "call":
             if args.tool in WRITES and not args.confirm_write:
                 raise ValueError("Write requires --confirm-write after user authorization")

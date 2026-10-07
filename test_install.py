@@ -11,19 +11,21 @@ from http.client import HTTPConnection
 from urllib.parse import urlencode, urlsplit
 from contextlib import redirect_stdout, redirect_stderr
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 from dotenv import dotenv_values
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
 from netease_email.cli import main, save_config, setup_values
-from netease_email.mail import Mailbox
+from netease_email.mail import Mailbox, MailError
+from netease_email import network
 from netease_email.setup_web import setup_server
 
 
 class InstallCheck(unittest.TestCase):
-    def test_setup_defaults_and_private_form(self):
+    @patch("netease_email.cli.Mailbox.check_connection")
+    def test_setup_defaults_and_private_form(self, check):
         with tempfile.TemporaryDirectory() as tmp:
             for domain in ("163.com", "126.com", "yeah.net", "vip.163.com", "vip.126.com", "188.com"):
                 values = setup_values(f"fake@{domain}", "fake-secret")
@@ -62,7 +64,8 @@ class InstallCheck(unittest.TestCase):
                     self.assertIn('type="password"', page)
                     self.assertEqual(request("GET", headers={"Host": "attacker.example"})[0], 404)
                     data = {"csrf": route[1:], "email": "fake@126.com", "password": "fake\\code'@${LITERAL}",
-                            "message_mib": "300", "attachment_mib": "200"}
+                            "message_mib": "300", "attachment_mib": "200", "imap_ip": "1.1.1.1",
+                            "smtp_ip": "8.8.8.8", "imap_host": "", "smtp_host": "", "writes": ""}
                     headers = {"Content-Type": "application/x-www-form-urlencoded", "Origin": server.origin}
                     self.assertEqual(request("POST", urlencode(data), {**headers, "Origin": "https://attacker.example"})[0], 403)
                     self.assertEqual(request("POST", urlencode({**data, "csrf": "wrong"}), headers)[0], 400)
@@ -70,6 +73,15 @@ class InstallCheck(unittest.TestCase):
                     self.assertFalse(web_path.exists())
                     self.assertEqual(request("POST", urlencode({**data, "password": ""}), headers)[0], 400)
                     self.assertEqual(request("POST", urlencode({**data, "message_mib": "0"}), headers)[0], 400)
+                    self.assertEqual(request("POST", urlencode({**data, "imap_ip": "127.0.0.1"}), headers)[0], 400)
+                    check.side_effect = MailError("IMAP: connection failed")
+                    status, response = request("POST", urlencode(data), headers)
+                    self.assertEqual(status, 400)
+                    self.assertIn("尚未保存", response)
+                    self.assertNotIn(data["password"], response)
+                    self.assertFalse(web_path.exists())
+                    self.assertFalse(server.configured)
+                    check.side_effect = None
                     status, response = request("POST", urlencode(data), headers)
                     self.assertEqual(status, 200)
                     self.assertNotIn(data["password"], response)
@@ -77,6 +89,8 @@ class InstallCheck(unittest.TestCase):
                     self.assertEqual(values["NETEASE_AUTH_CODE"], data["password"])
                     self.assertEqual(values["MAIL_READ_ONLY"], "true")
                     self.assertEqual(values["SMTP_HOST"], "smtp.126.com")
+                    self.assertEqual(values["IMAP_CONNECT_IP"], "1.1.1.1")
+                    self.assertEqual(values["SMTP_CONNECT_IP"], "8.8.8.8")
                     self.assertEqual(values["MAIL_MAX_MESSAGE_MIB"], "300")
                     self.assertEqual(values["MAIL_MAX_ATTACHMENT_MIB"], "200")
                     self.assertEqual(web_path.stat().st_mode & 0o777, 0o600)
@@ -84,6 +98,81 @@ class InstallCheck(unittest.TestCase):
                 finally:
                     server.shutdown()
                     thread.join()
+
+    def test_dns_fallback_keeps_tls_identity(self):
+        import socket
+        import ssl
+        context, raw, secured = MagicMock(), MagicMock(), MagicMock()
+        context.wrap_socket.return_value = secured
+        with patch.object(network, "system_addresses", return_value=["8.8.4.4"]) as local, \
+             patch.object(network, "doh_addresses", return_value=["1.1.1.1"]) as doh, \
+             patch.object(network.socket, "create_connection", side_effect=[TimeoutError(), raw]) as connect:
+            self.assertIs(network.connect_tls("imap.163.com", 993, context), secured)
+            self.assertEqual(connect.call_args.args[0], ("1.1.1.1", 993))
+            context.wrap_socket.assert_called_once_with(raw, server_hostname="imap.163.com")
+            doh.assert_called_once()
+            secured.settimeout.assert_called_with(20)
+        context.reset_mock()
+        with patch.object(network, "system_addresses") as local, \
+             patch.object(network, "doh_addresses") as doh, \
+             patch.object(network.socket, "create_connection", return_value=raw):
+            network.connect_tls("smtp.126.com", 465, context, connect_ip="1.1.1.1")
+            local.assert_not_called()
+            doh.assert_not_called()
+            context.wrap_socket.assert_called_with(raw, server_hostname="smtp.126.com")
+        with patch.object(network, "system_addresses", return_value=[]), \
+             patch.object(network, "doh_addresses") as doh:
+            with self.assertRaises(network.MailConnectionError):
+                network.connect_tls("imap.163.com", 993, context, dns_fallback=False)
+            doh.assert_not_called()
+        context.wrap_socket.side_effect = ssl.SSLCertVerificationError("untrusted")
+        with patch.object(network, "system_addresses", return_value=["8.8.4.4"]), \
+             patch.object(network, "doh_addresses", return_value=["1.1.1.1"]), \
+             patch.object(network.socket, "create_connection", return_value=raw):
+            with self.assertRaisesRegex(network.MailConnectionError, "证书"):
+                network.connect_tls("imap.163.com", 993, context)
+            raw.close.assert_called()
+        for address in ("127.0.0.1", "10.0.0.1", "::1", "not-an-ip"):
+            with self.assertRaises(ValueError):
+                network.public_ip(address)
+        with patch.object(network.socket, "getaddrinfo", side_effect=socket.gaierror()):
+            self.assertEqual(network.system_addresses("imap.163.com", 993, 1), [])
+        stalled = threading.Event()
+        with patch.object(network.socket, "getaddrinfo", side_effect=lambda *a, **k: (stalled.wait(1), [])[1]):
+            try:
+                self.assertEqual(network.system_addresses("imap.163.com", 993, 0.01), [])
+            finally:
+                stalled.set()
+        with patch.object(network, "urlopen") as urlopen:
+            response = urlopen.return_value.__enter__.return_value
+            response.read.return_value = json.dumps({"Status": 0, "Answer": [
+                {"type": 5, "data": "alias.example"}, {"type": 1, "data": "1.1.1.1"}]}).encode()
+            self.assertEqual(network.doh_addresses("https://8.8.8.8/resolve", "imap.163.com", "A", 1), ["1.1.1.1"])
+            request = urlopen.call_args.args[0]
+            self.assertIn("name=imap.163.com", request.full_url)
+            for body in (b"not json", b"[]", b'{"Status":2}', b'{"Status":0,"Answer":[{"type":1,"data":"127.0.0.1"}]}'):
+                response.read.return_value = body
+                self.assertEqual(network.doh_addresses("https://8.8.8.8/resolve", "imap.163.com", "A", 1), [])
+
+    def test_setup_checks_both_protocols_without_writes(self):
+        from test_connector import FakeIMAP, FakeSMTP, ENV
+        with patch("netease_email.mail.IMAP4SSL", FakeIMAP), patch("netease_email.mail.SMTPSSL", FakeSMTP):
+            result = Mailbox({**ENV, "MAIL_READ_ONLY": "true"}).check_connection()
+            self.assertTrue(result["ok"])
+            self.assertEqual(result["smtp"], "ok")
+            self.assertIn(("SELECT", '"INBOX"', True), FakeIMAP.instances[-1].calls)
+            self.assertFalse(hasattr(FakeSMTP.instances[-1], "message"))
+        with tempfile.TemporaryDirectory() as tmp, \
+             patch("netease_email.cli.Mailbox.check_connection", side_effect=MailError("SMTP: failed")), \
+             patch("sys.stdin.isatty", return_value=True), \
+             patch("getpass.getpass", return_value="fake-secret"), \
+             redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()) as err:
+            path = Path(tmp) / "failed.env"
+            with self.assertRaises(SystemExit):
+                main(["--env-file", str(path), "setup", "--email", "fake@163.com", "--enable-writes"])
+            self.assertFalse(path.exists())
+            self.assertNotIn("fake-secret", err.getvalue())
+            self.assertIn("尚未保存", err.getvalue())
 
     def test_config_and_cli_boundaries(self):
         with tempfile.TemporaryDirectory() as tmp:

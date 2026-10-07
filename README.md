@@ -4,7 +4,7 @@
 
 这是社区项目，与网易、OpenAI、xAI 和 Pi 无隶属关系。适合把自己的网易邮箱接入私人 AI 助手；尚未作为多用户邮件服务发布。
 
-当前版本：[v0.2.2（下载安装包）](https://github.com/huaiwen/NetEaseEmailConnector/releases/tag/v0.2.2)。变更及已验证范围见 [CHANGELOG](CHANGELOG.md)。
+当前版本：[v0.2.3（下载安装包）](https://github.com/huaiwen/NetEaseEmailConnector/releases/tag/v0.2.3)。变更及已验证范围见 [CHANGELOG](CHANGELOG.md)。
 
 | 客户端 | 接入方式 |
 | --- | --- |
@@ -22,7 +22,7 @@
 将下面这段话直接发给 **Codex、Pi、Grok Build 或其他能执行本地命令的 Agent**：
 
 ```text
-请安装 https://github.com/huaiwen/NetEaseEmailConnector 的 v0.2.2。
+请安装 https://github.com/huaiwen/NetEaseEmailConnector 的 v0.2.3。
 先阅读仓库 INSTALL.md，再检查 uv 和 Python 3.11+。
 安装连接器及适合当前客户端的 netease-email Skill 或 MCP 配置；保留已有的其他配置。
 在对话中确认我的邮箱地址和是否启用写入，然后由你启动 setup --web 打开本机配置页。
@@ -37,17 +37,17 @@ Agent 的具体执行步骤见 [INSTALL.md](INSTALL.md)。普通云端聊天无�
 先准备 [uv](https://docs.astral.sh/uv/getting-started/installation/)，它可以管理所需 Python 环境：
 
 ```sh
-uv tool install 'git+https://github.com/huaiwen/NetEaseEmailConnector.git@v0.2.2'
+uv tool install 'git+https://github.com/huaiwen/NetEaseEmailConnector.git@v0.2.3'
 netease-email-connector setup --web
 ```
 
 若命令不在 PATH，运行 `uv tool update-shell` 后重开终端，或使用 `uv tool dir --bin` 中的完整路径。也可以把命令前缀换成：
 
 ```sh
-uvx --from 'git+https://github.com/huaiwen/NetEaseEmailConnector.git@v0.2.2' netease-email-connector setup --web
+uvx --from 'git+https://github.com/huaiwen/NetEaseEmailConnector.git@v0.2.3' netease-email-connector setup --web
 ```
 
-配置页只需填写邮箱、授权码和是否允许写入，服务器自动匹配；高级设置通常不用修改。默认只读，自动生成 API 密钥，保存到 `~/.config/netease-email-connector/.env`（权限 0600）。升级/重新安装不会覆盖此文件。再次运行 setup 会明确提示配置已存在；修改配置请用本机编辑器打开此文件。
+配置页只需填写邮箱、授权码和是否允许写入，服务器自动匹配；高级设置通常不用修改。保存前会检查 IMAP/SMTP 的 DNS、TLS、登录和只读 INBOX 访问，全部通过才保存；失败时显示原因，不发送或修改邮件。默认只读，自动生成 API 密钥，保存到 `~/.config/netease-email-connector/.env`（权限 0600）。升级/重新安装不会覆盖此文件。再次运行 setup 会明确提示配置已存在；修改配置请用本机编辑器打开此文件。
 
 Agent 可预填对话中已提供的信息，例如 `netease-email-connector setup --web --email user@126.com`；只有用户要求写入时才加 `--enable-writes`。授权码在本机页面填写，不经过对话。页面保存后自动停止，10 分钟过期。无桌面环境可使用终端版 `setup` 隐藏输入。
 
@@ -64,7 +64,7 @@ Agent 可预填对话中已提供的信息，例如 `netease-email-connector set
 均使用 TLS：IMAP 993，SMTP 465。学校/企业邮箱如有专用服务器，可在高级设置修改，或使用 `--imap-host` / `--smtp-host`。此预设适用于网易托管邮箱，其他服务商需手动配置。[企业邮箱服务器查询](https://qiye.163.com/help/client-profile.html)、[VIP 邮箱帮助](https://help.vip.126.com/faq.do?categoryID=90&m=list)。
 
 ```sh
-netease-email-connector doctor       # 只检查 IMAP 登录，不发送、不读取正文
+netease-email-connector doctor       # 检查 IMAP/SMTP 连接和登录，不发送、不读取正文
 netease-email-connector tools        # 输出 8 个操作的 JSON schema
 netease-email-connector mcp-config   # 输出本机 MCP 配置，不含密钥
 ```
@@ -83,16 +83,16 @@ MAIL_MAX_ATTACHMENT_MIB=200
 ### Pi 一次安装 Skill
 
 ```sh
-pi install npm:netease-email-connector@0.2.2
+pi install npm:netease-email-connector@0.2.3
 ```
 
 重启 Pi，输入 `/skill:netease-email`，或说“帮我配置网易邮箱，列出目录”。Skill 会复用已安装 CLI；若缺少，会指导 Agent 安装。**Skill 路线不需要 pi-mcp-adapter**。需要将 8 个操作常驻为 MCP 工具时，使用下文 Pi MCP 接入。
 
-也可用 `pi install git:github.com/huaiwen/NetEaseEmailConnector@v0.2.2` 安装同一版本。
+也可用 `pi install git:github.com/huaiwen/NetEaseEmailConnector@v0.2.3` 安装同一版本。
 
 ### 只下载 Skill / MCP
 
-- Skill：[下载 ZIP](https://github.com/huaiwen/NetEaseEmailConnector/releases/download/v0.2.2/netease-email-skill.zip) 或查看 [SKILL.md](plugins/netease-email/skills/netease-email/SKILL.md)。将解压后的整个 `netease-email` 目录复制到 `~/.agents/skills/`，Codex、Pi 和 Grok Build 可发现；也可使用各客户端自己的 skills 目录。Skill 是指导文件，实际操作由首次安装的 CLI 执行。
+- Skill：[下载 ZIP](https://github.com/huaiwen/NetEaseEmailConnector/releases/download/v0.2.3/netease-email-skill.zip) 或查看 [SKILL.md](plugins/netease-email/skills/netease-email/SKILL.md)。将解压后的整个 `netease-email` 目录复制到 `~/.agents/skills/`，Codex、Pi 和 Grok Build 可发现；也可使用各客户端自己的 skills 目录。Skill 是指导文件，实际操作由首次安装的 CLI 执行。
 - MCP：[通用配置](examples/mcp.json)。有 uv 即可按固定版本启动，首次启动下载依赖；用户先完成 setup。已有 MCP 配置请仅合并 `netease_email` 条目。
 - 无需运行常驻服务的 Agent 可直接使用 CLI：
 
@@ -136,7 +136,7 @@ grok plugin install netease-email --trust
 先克隆或下载本仓库并进入目录：
 
 ```sh
-git clone --branch v0.2.2 https://github.com/huaiwen/NetEaseEmailConnector.git
+git clone --branch v0.2.3 https://github.com/huaiwen/NetEaseEmailConnector.git
 cd NetEaseEmailConnector
 ```
 
@@ -338,11 +338,26 @@ Pi 模板按官方包文档配置，MCP stdio 传输有真实子进程的离线�
 | 启动提示 Invalid configuration | 核对邮箱、授权码、32 位以上随机 API token、URL 和 `true/false` 设置 |
 | HTTP 401 | 用连接器 API token，而不是网易授权码；检查代理有没有转发 Authorization |
 | HTTP 400 / MCP 421 | `PUBLIC_BASE_URL` 与请求域名不一致，或代理改写了 Host |
+| 海外 DNS 解析失败或连接超时 | 自动备用 DNS；仍失败时按下方说明查询公网 IP，并运行 doctor 验证 |
 | IMAP 登录失败 / SELECT 被拒绝 | 网页版是否开启 IMAP，授权码是否有效，客户端是否被网易风控限制；服务会在支持时发送 IMAP ID |
 | MOVE 和 UIDPLUS 都不支持 | 到网页版移动或删除，连接器不会执行全局清除 |
 | 发送结果 unknown | 先按返回的 Message-ID 核查，不能直接再次调用发送 |
 | Pi 没看到工具 | 确认适配器已安装并重启；检查环境变量、配置合并位置及 `/mcp reconnect netease_email` |
 | ChatGPT 超时 / 附件过大 | 减少搜索数量；Actions 有 45 秒和 100,000 字符的平台上限 |
+
+### 海外 DNS 或连接异常
+
+连接器先尝试本机 DNS，解析失败或返回地址无法建立 TLS 时，会通过 Google / Cloudflare 的 DNS-over-HTTPS 查询备用 A/AAAA 地址并尝试连接。只向 DNS 服务查询服务器域名，不发送邮箱地址、授权码或邮件。系统 DNS 等待最多 5 秒，各地址的连接/握手使用短超时，备用尝试受 30 秒连接预算限制；登录和邮件命令另有 20 秒 socket 超时。只有建连阶段会回退，认证失败或邮件操作失败不会触发自动重发。
+
+如果仍然失败，在 [whatsmydns.net](https://www.whatsmydns.net/) 查询当前 `IMAP_HOST` / `SMTP_HOST` 的 A 或 AAAA 记录，将公网 IP 填入配置页高级设置的“连接 IP”；**主机名保留网易官方域名**。连接器始终用主机名做 TLS SNI 和证书校验，不接受不匹配证书。终端 setup 可用 `--imap-ip` / `--smtp-ip`；已有配置可在本机编辑器中添加：
+
+```dotenv
+# 将下方说明替换为实际查询到的公网 IP；无需固定 IP 时删除对应行
+IMAP_CONNECT_IP=查询到的IMAP公网IP
+SMTP_CONNECT_IP=查询到的SMTP公网IP
+```
+
+指定 IP 会优先尝试，失效后重新解析，不修改系统 DNS 或 hosts 文件。更新配置后重启 MCP/HTTP，再运行 `netease-email-connector doctor`；CLI 下次调用即生效。如不希望使用公共 DNS，设置 `MAIL_DNS_FALLBACK=false`，仍可使用本机 DNS 和指定 IP。IP 可能变化，以实际查询和 TLS 测试为准；DNS 回退不能解决网络封锁、端口限制或账号权限问题。
 
 ## 参与开发与开源
 

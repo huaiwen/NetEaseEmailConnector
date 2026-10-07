@@ -168,7 +168,7 @@ class ConnectorCheck(unittest.TestCase):
             # A file can fit the attachment cap but exceed the whole MIME cap after encoding.
             payload = {"to": ["test@example.com"], "subject": "offline", "text": "", "attachments": [
                 {"filename": "exact", "content_base64": exact}]}
-            with patch("netease_email.mail.smtplib.SMTP_SSL") as smtp, patch.object(box, "connect") as imap:
+            with patch("netease_email.mail.SMTPSSL") as smtp, patch.object(box, "connect") as imap:
                 with self.assertRaisesRegex(MailError, "MIME"):
                     box.send_email(Compose(**payload))
                 with self.assertRaisesRegex(MailError, "MIME"):
@@ -204,7 +204,7 @@ class ConnectorCheck(unittest.TestCase):
         asyncio.run(check())
 
     def test_offline_workflow(self):
-        with patch.dict(os.environ, ENV, clear=True), patch("netease_email.mail.imaplib.IMAP4_SSL", FakeIMAP), patch("netease_email.mail.smtplib.SMTP_SSL", FakeSMTP):
+        with patch.dict(os.environ, ENV, clear=True), patch("netease_email.mail.IMAP4SSL", FakeIMAP), patch("netease_email.mail.SMTPSSL", FakeSMTP):
             box = Mailbox()
             for name in ["INBOX", "草稿箱", "已删除 & Archive", '项目 "A"', "📬"]:
                 self.assertEqual(decode_folder(encode_folder(name).encode()), name)

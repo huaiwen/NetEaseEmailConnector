@@ -18,6 +18,8 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from .network import IMAP4SSL, SMTPSSL, MailConnectionError, public_ip
+
 MIB = 1024 * 1024
 MAX_TEXT = 30_000
 
@@ -200,23 +202,30 @@ def checked(result, operation: str):
 
 
 class Mailbox:
-    def __init__(self):
-        size_limit("MESSAGE")
-        size_limit("ATTACHMENT")
-        self.address = os.environ.get("NETEASE_EMAIL", "").strip()
-        self.password = os.environ.get("NETEASE_AUTH_CODE", "")
+    def __init__(self, config=None):
+        config = os.environ if config is None else config
+        size_limit("MESSAGE", config.get("MAIL_MAX_MESSAGE_MIB", "200"))
+        size_limit("ATTACHMENT", config.get("MAIL_MAX_ATTACHMENT_MIB", "200"))
+        self.address = config.get("NETEASE_EMAIL", "").strip()
+        self.password = config.get("NETEASE_AUTH_CODE", "")
         Compose.addresses([self.address])
         imap_host, smtp_host = default_hosts(self.address)
-        self.imap_host = os.environ.get("IMAP_HOST") or imap_host
-        self.smtp_host = os.environ.get("SMTP_HOST") or smtp_host
+        self.imap_host = config.get("IMAP_HOST") or imap_host
+        self.smtp_host = config.get("SMTP_HOST") or smtp_host
         if not self.password or not self.imap_host or not self.smtp_host:
             raise ValueError("Set NETEASE_EMAIL, NETEASE_AUTH_CODE and mail hosts for nonstandard domains")
-        self.imap_port = int(os.environ.get("IMAP_PORT", "993"))
-        self.smtp_port = int(os.environ.get("SMTP_PORT", "465"))
-        read_only = os.environ.get("MAIL_READ_ONLY", "false").lower()
+        self.imap_port = int(config.get("IMAP_PORT", "993"))
+        self.smtp_port = int(config.get("SMTP_PORT", "465"))
+        read_only = config.get("MAIL_READ_ONLY", "false").lower()
         if read_only not in {"true", "false"}:
             raise ValueError("MAIL_READ_ONLY must be true or false")
         self.read_only = read_only == "true"
+        self.imap_ip = public_ip(config["IMAP_CONNECT_IP"]) if config.get("IMAP_CONNECT_IP") else ""
+        self.smtp_ip = public_ip(config["SMTP_CONNECT_IP"]) if config.get("SMTP_CONNECT_IP") else ""
+        fallback = config.get("MAIL_DNS_FALLBACK", "true").lower()
+        if fallback not in {"true", "false"}:
+            raise ValueError("MAIL_DNS_FALLBACK must be true or false")
+        self.dns_fallback = fallback == "true"
 
     def writable(self):
         if self.read_only:
@@ -228,7 +237,8 @@ class Mailbox:
             self.writable()
         client = None
         try:
-            client = imaplib.IMAP4_SSL(self.imap_host, self.imap_port, ssl_context=ssl.create_default_context(), timeout=20)
+            client = IMAP4SSL(self.imap_host, self.imap_port, ssl_context=ssl.create_default_context(), timeout=20,
+                              connect_ip=self.imap_ip, dns_fallback=self.dns_fallback)
             client.login(self.address, self.password)
             client.capabilities = tuple(b" ".join(checked(client.capability(), "CAPABILITY")).upper().split())
             # NetEase may reject SELECT without RFC 2971 ID. imaplib has no public ID method.
@@ -245,6 +255,8 @@ class Mailbox:
                     raise MailError("Mailbox UIDVALIDITY changed; search again before using this reference")
                 client.mailbox_uidvalidity = validity
             yield client
+        except MailConnectionError as exc:
+            raise MailError("IMAP: " + str(exc)) from None
         except (imaplib.IMAP4.error, OSError):
             raise MailError("IMAP connection or command failed; check authorization code, IMAP access and network. A write may have completed; inspect before retrying.") from None
         finally:
@@ -252,6 +264,26 @@ class Mailbox:
                 # Never CLOSE or unscoped EXPUNGE: those can delete unrelated messages.
                 with suppress(Exception):
                     client.logout()
+
+    def check_connection(self):
+        # SELECT is read-only; validates NetEase ID/access without fetching mail.
+        with self.connect("INBOX") as client:
+            folders = checked(client.list(), "LIST")
+        client = None
+        try:
+            client = SMTPSSL(self.smtp_host, self.smtp_port, context=ssl.create_default_context(), timeout=20,
+                             connect_ip=self.smtp_ip, dns_fallback=self.dns_fallback)
+            client.login(self.address, self.password)
+        except MailConnectionError as exc:
+            raise MailError("SMTP: " + str(exc)) from None
+        except (smtplib.SMTPException, OSError):
+            raise MailError("SMTP 登录失败；请检查授权码和 SMTP 服务是否开启。未发送邮件。") from None
+        finally:
+            if client is not None:
+                with suppress(Exception):
+                    client.quit()
+        return {"ok": True, "imap": "ok", "smtp": "ok", "read_only": self.read_only,
+                "folder_count": len(folders)}
 
     def list_folders(self):
         with self.connect() as client:
@@ -424,10 +456,13 @@ class Mailbox:
         client = None
         sending = False
         try:
-            client = smtplib.SMTP_SSL(self.smtp_host, self.smtp_port, context=ssl.create_default_context(), timeout=20)
+            client = SMTPSSL(self.smtp_host, self.smtp_port, context=ssl.create_default_context(), timeout=20,
+                             connect_ip=self.smtp_ip, dns_fallback=self.dns_fallback)
             client.login(self.address, self.password)
             sending = True
             refused = client.send_message(message, from_addr=self.address, to_addrs=recipients)
+        except MailConnectionError as exc:
+            raise MailError("SMTP: " + str(exc)) from None
         except smtplib.SMTPRecipientsRefused:
             raise MailError("All recipients were refused; nothing was sent") from None
         except (smtplib.SMTPException, OSError):

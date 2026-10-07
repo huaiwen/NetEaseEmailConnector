@@ -1,6 +1,6 @@
 {
   "name": "netease-email",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Community NetEase mailbox connector with local setup, mail tools and an agent skill",
   "author": {
     "name": "huaiwen",
