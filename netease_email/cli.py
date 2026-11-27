@@ -76,9 +76,10 @@ def save_config(path, values):
 def finish_setup(path, values):
     if path.exists() or path.is_symlink():
         raise FileExistsError
+    dns_settings = {key: os.environ[key] for key in ("MAIL_DNS_FALLBACK", "MAIL_DOH_ENDPOINTS") if key in os.environ}
     try:
-        Mailbox(values).check_connection()
-    except MailError as exc:
+        Mailbox({**values, **dns_settings}).check_connection()
+    except (MailError, ValueError) as exc:
         raise SetupError("连接检查未通过，尚未保存配置。" + str(exc)) from None
     save_config(path, values)
 

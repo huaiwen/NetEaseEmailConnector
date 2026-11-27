@@ -18,7 +18,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from .network import IMAP4SSL, SMTPSSL, MailConnectionError, public_ip
+from .network import IMAP4SSL, SMTPSSL, MailConnectionError, parse_doh_endpoints, public_ip
 
 MIB = 1024 * 1024
 MAX_TEXT = 30_000
@@ -226,6 +226,7 @@ class Mailbox:
         if fallback not in {"true", "false"}:
             raise ValueError("MAIL_DNS_FALLBACK must be true or false")
         self.dns_fallback = fallback == "true"
+        self.doh_endpoints = parse_doh_endpoints(config.get("MAIL_DOH_ENDPOINTS"))
 
     def writable(self):
         if self.read_only:
@@ -238,7 +239,7 @@ class Mailbox:
         client = None
         try:
             client = IMAP4SSL(self.imap_host, self.imap_port, ssl_context=ssl.create_default_context(), timeout=20,
-                              connect_ip=self.imap_ip, dns_fallback=self.dns_fallback)
+                              connect_ip=self.imap_ip, dns_fallback=self.dns_fallback, doh_endpoints=self.doh_endpoints)
             client.login(self.address, self.password)
             client.capabilities = tuple(b" ".join(checked(client.capability(), "CAPABILITY")).upper().split())
             # NetEase may reject SELECT without RFC 2971 ID. imaplib has no public ID method.
@@ -272,7 +273,7 @@ class Mailbox:
         client = None
         try:
             client = SMTPSSL(self.smtp_host, self.smtp_port, context=ssl.create_default_context(), timeout=20,
-                             connect_ip=self.smtp_ip, dns_fallback=self.dns_fallback)
+                             connect_ip=self.smtp_ip, dns_fallback=self.dns_fallback, doh_endpoints=self.doh_endpoints)
             client.login(self.address, self.password)
         except MailConnectionError as exc:
             raise MailError("SMTP: " + str(exc)) from None
@@ -457,7 +458,7 @@ class Mailbox:
         sending = False
         try:
             client = SMTPSSL(self.smtp_host, self.smtp_port, context=ssl.create_default_context(), timeout=20,
-                             connect_ip=self.smtp_ip, dns_fallback=self.dns_fallback)
+                             connect_ip=self.smtp_ip, dns_fallback=self.dns_fallback, doh_endpoints=self.doh_endpoints)
             client.login(self.address, self.password)
             sending = True
             refused = client.send_message(message, from_addr=self.address, to_addrs=recipients)
