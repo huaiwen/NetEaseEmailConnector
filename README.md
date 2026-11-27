@@ -175,18 +175,22 @@ curl --fail-with-body \
 | `PUBLIC_BASE_URL` | 默认 `http://127.0.0.1:8000`；公网部署使用 HTTPS 源地址 |
 | `IMAP_HOST`、`SMTP_HOST`、`IMAP_PORT`、`SMTP_PORT` | 覆盖服务器和端口；默认 IMAP 993 / SMTP 465，只支持隐式 TLS，不支持 STARTTLS 或明文 |
 | `MAIL_MAX_MESSAGE_MIB`、`MAIL_MAX_ATTACHMENT_MIB` | 整封 MIME 邮件和解码后单个附件的上限，分别默认为 200 MiB，须为正整数 |
-| `MAIL_DNS_FALLBACK`、`IMAP_CONNECT_IP`、`SMTP_CONNECT_IP` | 控制公共 DNS 回退（默认 `true`）或优先尝试指定公网 IP；始终使用主机名验证 TLS |
+| `MAIL_DNS_FALLBACK` | 默认 `true`；设为 `false` 禁用公共 DNS 查询，仍可尝试手动指定和系统 DNS 返回的 IP |
+| `MAIL_DOH_ENDPOINTS` | 用逗号分隔的 HTTPS DNS JSON 服务 URL，按顺序查询；默认 `https://8.8.8.8/resolve,https://1.1.1.1/dns-query`（Google、Cloudflare）。URL 不含凭据、查询参数或片段。v0.2.3 仅支持默认服务 |
+| `IMAP_CONNECT_IP`、`SMTP_CONNECT_IP` | 分别优先尝试一个手动指定的公网 IP；始终使用原主机名验证 TLS |
 
 安装版优先使用已有进程环境变量，其次读取 `--env-file`、`NETEASE_ENV_FILE` 或默认用户配置所选中的文件；不会自动读取当前工作目录的 `.env`，也不会展开值中的 `${...}`。源码版用仓库根目录的 `server.py` 启动时会优先选择同目录的 `.env`（仍可通过显式 `--env-file` 改选）。修改配置后重启 MCP 或 HTTP 进程。
 
 **容量。** 整信上限包含 MIME/Base64 开销；要处理 200 MiB 的原始附件，需要给整信留出更多空间，例如设置为 300 MiB。发信和草稿最多支持 5 个附件。邮件在内存中解析，实际内存占用可能高于文件大小；正文最多返回 30,000 字符，用 `body_truncated` 判断是否截断。邮件服务商、代理和客户端可能设有更低的限制。
+
+**海外 DNS 与 IP 切换。** IMAP 和 SMTP 分别建连：先试手动指定的 IP（如有），再试系统 DNS 返回的地址；若没有地址或 TCP/TLS 连接失败，则通过 DNS-over-HTTPS（DoH）查询 A/AAAA 记录，在建连时间预算内逐个尝试尚未试过的公网 IP。默认 DoH 服务使用 IP 形式的 HTTPS 地址，不依赖本机 DNS 解析其主机名。DoH 只查询邮箱服务器主机名，不发送账号、授权码或邮件内容；连接邮件服务器时，TLS SNI 和证书校验仍使用原主机名。回退只发生在认证之前，不会重试登录或邮件操作。首次运行 setup 如需更改 DoH 设置，请用进程环境变量。
 
 **故障排查。**
 
 | 现象 | 先检查什么 |
 | --- | --- |
 | `doctor` 登录失败或 INBOX 被拒绝 | 网页端是否开启 IMAP/SMTP、授权码是否有效、主机是否正确，以及账号有无网易风控限制 |
-| DNS 失败或 TLS 无法连接 | 默认可用 Google/Cloudflare 的 DoH 查询备用地址，只查询服务器域名；也可在高级设置填公网连接 IP，官方主机名不变。回退只发生在建连阶段，不重试登录或邮件操作 |
+| DNS 失败或 TLS 无法连接 | 运行 `doctor` 检查连接。若默认 DoH 服务不可用，可配置可从本机访问的备用服务；也可通过 [whatsmydns.net](https://www.whatsmydns.net/) 查询 A/AAAA 记录，再在高级设置填入公网 IP，保留官方主机名 |
 | HTTP 401 | Bearer 使用连接器密钥，不是网易授权码；确认反向代理转发了 `Authorization` |
 | HTTP 400 或 MCP 421 | 检查 `PUBLIC_BASE_URL` 与实际请求地址是否匹配，以及反向代理是否保留原始 `Host` |
 | 移动失败 | 服务端需支持 `MOVE` 或 `UIDPLUS`。多步移动失败后可能留下副本，先检查源和目标两个文件夹；连接器不会全局清除邮件 |

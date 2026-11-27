@@ -17,7 +17,7 @@ from dotenv import dotenv_values
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
-from netease_email.cli import main, save_config, setup_values
+from netease_email.cli import finish_setup, main, save_config, setup_values
 from netease_email.mail import Mailbox, MailError
 from netease_email import network
 from netease_email.setup_web import setup_server
@@ -153,6 +153,68 @@ class InstallCheck(unittest.TestCase):
             for body in (b"not json", b"[]", b'{"Status":2}', b'{"Status":0,"Answer":[{"type":1,"data":"127.0.0.1"}]}'):
                 response.read.return_value = body
                 self.assertEqual(network.doh_addresses("https://8.8.8.8/resolve", "imap.163.com", "A", 1), [])
+
+    def test_doh_failover_after_dns_failure(self):
+        endpoints = ("https://8.8.4.4/resolve", "https://1.0.0.1/dns-query")
+        context, raw, secured = MagicMock(), MagicMock(), MagicMock()
+        context.wrap_socket.return_value = secured
+        response = MagicMock()
+        response.__enter__.return_value.read.return_value = json.dumps({"Status": 0, "Answer": [
+            None, {"type": 1, "data": "127.0.0.1"}, {"type": 1, "data": "2606:4700:4700::1111"},
+            {"type": 1, "data": "8.8.8.8"}, {"type": 1, "data": "8.8.8.8"},
+            {"type": 1, "data": "1.1.1.1"},
+        ]}).encode()
+        with patch.object(network.socket, "getaddrinfo", side_effect=network.socket.gaierror()), \
+             patch.object(network, "urlopen", side_effect=[TimeoutError(), response]) as doh, \
+             patch.object(network.socket, "create_connection", side_effect=[TimeoutError(), raw]) as connect:
+            self.assertIs(network.connect_tls("imap.163.com", 993, context, doh_endpoints=endpoints), secured)
+            self.assertEqual([call.args[0] for call in connect.call_args_list], [("8.8.8.8", 993), ("1.1.1.1", 993)])
+            self.assertEqual([call.args[0].full_url for call in doh.call_args_list], [
+                f"{endpoint}?name=imap.163.com&type=A&edns_client_subnet=0.0.0.0%2F0" for endpoint in endpoints
+            ])
+            context.wrap_socket.assert_called_once_with(raw, server_hostname="imap.163.com")
+
+    def test_doh_keeps_time_after_local_connection_timeouts(self):
+        context, raw = MagicMock(), MagicMock()
+        clock = 0
+
+        def connect(address, timeout):
+            nonlocal clock
+            if address[0] == "1.1.1.1":
+                return raw
+            clock += timeout
+            raise TimeoutError
+
+        with patch.object(network.time, "monotonic", side_effect=lambda: clock), \
+             patch.object(network, "system_addresses", return_value=["8.8.8.8", "8.8.4.4", "1.0.0.1", "9.9.9.9"]), \
+             patch.object(network, "doh_addresses", return_value=["1.1.1.1"]) as doh, \
+             patch.object(network.socket, "create_connection", side_effect=connect):
+            self.assertIs(network.connect_tls("smtp.126.com", 465, context, connect_ip="149.112.112.112"),
+                          context.wrap_socket.return_value)
+            self.assertEqual(clock, 20)
+            doh.assert_called_once_with(network.DEFAULT_DOH_ENDPOINTS[0], "smtp.126.com", "A", 5)
+            context.wrap_socket.assert_called_once_with(raw, server_hostname="smtp.126.com")
+
+    def test_doh_config_applies_to_setup_and_both_protocols(self):
+        endpoints = ("https://1.0.0.1/dns-query", "https://8.8.4.4/resolve")
+        values = setup_values("test@163.com", "fake-code")
+        self.assertEqual(Mailbox(values).doh_endpoints, network.DEFAULT_DOH_ENDPOINTS)
+        for invalid in ("", "http://dns.example", "https://user:pw@dns.example", "https://dns.example?type=A",
+                        "https://dns.example#query", "https://dns.example:abc", "https://dns.example,"):
+            with self.subTest(invalid=invalid), self.assertRaisesRegex(ValueError, "MAIL_DOH_ENDPOINTS"):
+                Mailbox({**values, "MAIL_DOH_ENDPOINTS": invalid})
+        with tempfile.TemporaryDirectory() as tmp, \
+             patch.dict(os.environ, {"MAIL_DNS_FALLBACK": "false", "MAIL_DOH_ENDPOINTS": ", ".join(endpoints)}), \
+             patch("netease_email.mail.IMAP4SSL") as imap, patch("netease_email.mail.SMTPSSL") as smtp:
+            client = imap.return_value
+            client.capability.return_value = ("OK", [b"IMAP4rev1"])
+            client.select.return_value = ("OK", [])
+            client.response.return_value = ("UIDVALIDITY", [b"42"])
+            client.list.return_value = ("OK", [])
+            finish_setup(Path(tmp) / "account.env", values)
+            for protocol in (imap, smtp):
+                self.assertEqual(protocol.call_args.kwargs["doh_endpoints"], endpoints)
+                self.assertFalse(protocol.call_args.kwargs["dns_fallback"])
 
     def test_setup_checks_both_protocols_without_writes(self):
         from test_connector import FakeIMAP, FakeSMTP, ENV

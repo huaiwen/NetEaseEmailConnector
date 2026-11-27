@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- 支持通过 `MAIL_DOH_ENDPOINTS` 配置备用 DNS 服务。为 DoH 预留建连时间，并在单条 DNS 记录无效时继续尝试其他公网 IP。
+
 ## v0.2.3 — 2026-10-08
 
 - 配置保存前验证 IMAP/SMTP TLS、登录及只读 INBOX 访问；连接失败不保存配置。doctor 同步检查两个协议。
